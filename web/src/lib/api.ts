@@ -570,3 +570,143 @@ export const audit = {
     return apiFetch<AuditEvent[]>(`/audit${query ? `?${query}` : ""}`);
   },
 };
+
+// ─── Rotation Types ──────────────────────────────────────────────────────────
+
+export type ConnectorType = "random_password";
+
+export interface RotationConfig {
+  id: string;
+  secret_id: string;
+  project_id: string;
+  path: string;
+  schedule: string; // cron expression
+  connector_type: ConnectorType;
+  enabled: boolean;
+  last_rotated_at: string | null;
+  next_rotation_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SetRotationRequest {
+  schedule: string;
+  connector_type: ConnectorType;
+  enabled: boolean;
+}
+
+// ─── Lease Types ─────────────────────────────────────────────────────────────
+
+export type LeaseType = "database";
+export type LeaseStatus = "active" | "expired" | "revoked";
+
+export interface Lease {
+  id: string;
+  type: LeaseType;
+  issued_to: string;
+  path: string;
+  project_id: string;
+  issued_at: string;
+  expires_at: string;
+  status: LeaseStatus;
+  revoked_at: string | null;
+}
+
+export interface IssueLeaseRequest {
+  type: LeaseType;
+  ttl_seconds: number;
+  project_id: string;
+  path?: string;
+}
+
+// ─── Dashboard Stats ─────────────────────────────────────────────────────────
+
+export interface DashboardStats {
+  total_secrets: number;
+  total_projects: number;
+  active_leases: number;
+  recent_rotations: number;
+}
+
+// ─── Health ──────────────────────────────────────────────────────────────────
+
+export interface HealthStatus {
+  status: "ok" | "degraded" | "error";
+  version?: string;
+  uptime?: number;
+}
+
+// ─── Rotation API ────────────────────────────────────────────────────────────
+
+export const rotation = {
+  get: (projectId: string, path: string) =>
+    apiFetch<RotationConfig>(
+      `/secrets/${projectId}/${encodeURIComponent(path)}/rotation`
+    ),
+
+  set: (projectId: string, path: string, data: SetRotationRequest) =>
+    apiFetch<RotationConfig>(
+      `/secrets/${projectId}/${encodeURIComponent(path)}/rotation`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    ),
+
+  delete: (projectId: string, path: string) =>
+    apiFetch<void>(
+      `/secrets/${projectId}/${encodeURIComponent(path)}/rotation`,
+      {
+        method: "DELETE",
+      }
+    ),
+
+  rotateNow: (projectId: string, path: string) =>
+    apiFetch<{ version: number; rotated_at: string }>(
+      `/secrets/${projectId}/${encodeURIComponent(path)}/rotate`,
+      {
+        method: "POST",
+      }
+    ),
+};
+
+// ─── Leases API ──────────────────────────────────────────────────────────────
+
+export const leases = {
+  list: () => apiFetch<Lease[]>("/leases"),
+
+  issue: (data: IssueLeaseRequest) =>
+    apiFetch<Lease>("/leases", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  revoke: (leaseId: string) =>
+    apiFetch<Lease>(`/leases/${leaseId}/revoke`, {
+      method: "POST",
+    }),
+};
+
+// ─── Health / Ready ──────────────────────────────────────────────────────────
+
+export const health = {
+  check: () => apiFetch<HealthStatus>("/health"),
+  ready: () => apiFetch<HealthStatus>("/ready"),
+};
+
+// ─── OIDC / SSO ──────────────────────────────────────────────────────────────
+
+export const oidc = {
+  authorizeUrl: () => `${API_BASE}/auth/oidc/authorize`,
+  callback: (token: string) =>
+    apiFetch<{ token: string; user: User }>(`/auth/oidc/callback`, {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+};
+
+// ─── Dashboard ───────────────────────────────────────────────────────────────
+
+export const dashboard = {
+  stats: () => apiFetch<DashboardStats>("/dashboard/stats"),
+};

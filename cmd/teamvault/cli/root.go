@@ -27,4 +27,18 @@ func init() {
 	rootCmd.AddCommand(policyCmd)
 	rootCmd.AddCommand(orgCmd)
 	rootCmd.AddCommand(teamCmd)
+
+	// Secret rotation
+	rootCmd.AddCommand(rotationCmd)
+	rootCmd.AddCommand(rotateCmd)
+
+	// Dynamic leases
+	rootCmd.AddCommand(leaseCmd)
+
+	// Health diagnostics
+	rootCmd.AddCommand(doctorCmd)
+
+	// Export/import
+	rootCmd.AddCommand(exportCmd)
+	rootCmd.AddCommand(importCmd)
 }

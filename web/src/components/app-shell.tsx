@@ -24,6 +24,7 @@ import {
   Building2,
   Users,
   ShieldCheck,
+  KeyRound,
 } from "lucide-react";
 
 const navSections = [
@@ -40,6 +41,12 @@ const navSections = [
     ],
   },
   {
+    label: "Infrastructure",
+    items: [
+      { href: "/leases", label: "Leases", icon: KeyRound },
+    ],
+  },
+  {
     label: "Security",
     items: [
       { href: "/policies", label: "IAM Policies", icon: ShieldCheck },
@@ -52,6 +59,9 @@ const navSections = [
 function isActive(pathname: string, href: string): boolean {
   if (href === "/dashboard") {
     return pathname === "/dashboard" || pathname.startsWith("/projects");
+  }
+  if (href === "/leases") {
+    return pathname === "/leases" || pathname.startsWith("/leases/");
   }
   return pathname === href || pathname.startsWith(href + "/");
 }

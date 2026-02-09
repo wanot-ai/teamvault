@@ -10,6 +10,7 @@ import {
   type PutSecretRequest,
 } from "@/lib/api";
 import { AppShell } from "@/components/app-shell";
+import { SecretTree } from "@/components/secret-tree";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,6 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -31,7 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus,
   Loader2,
@@ -39,6 +41,8 @@ import {
   ChevronLeft,
   Lock,
   Trash2,
+  FolderTree,
+  List,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -55,6 +59,7 @@ export default function ProjectSecretsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"tree" | "list">("tree");
 
   const [newPath, setNewPath] = useState("");
   const [newValue, setNewValue] = useState("");
@@ -125,6 +130,12 @@ export default function ProjectSecretsPage() {
     }
   };
 
+  const handleSelectSecret = (secret: Secret) => {
+    router.push(
+      `/projects/${projectId}/secrets/${encodeURIComponent(secret.path)}`
+    );
+  };
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -151,85 +162,109 @@ export default function ProjectSecretsPage() {
               )}
             </div>
 
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Secret
+            <div className="flex items-center gap-2">
+              {/* View mode toggle */}
+              <div className="flex border rounded-md">
+                <Button
+                  variant={viewMode === "tree" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-9 px-3 rounded-r-none"
+                  onClick={() => setViewMode("tree")}
+                >
+                  <FolderTree className="h-4 w-4" />
                 </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <form onSubmit={handleCreate}>
-                  <DialogHeader>
-                    <DialogTitle>Create Secret</DialogTitle>
-                    <DialogDescription>
-                      Add a new secret to this project
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="secret-path">Path</Label>
-                      <Input
-                        id="secret-path"
-                        placeholder="api-keys/stripe"
-                        value={newPath}
-                        onChange={(e) => setNewPath(e.target.value)}
-                        required
-                        autoFocus
-                        className="font-mono"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Use forward slashes to organize: db/password, api-keys/stripe
-                      </p>
+                <Button
+                  variant={viewMode === "list" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-9 px-3 rounded-l-none"
+                  onClick={() => setViewMode("list")}
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Secret
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <form onSubmit={handleCreate}>
+                    <DialogHeader>
+                      <DialogTitle>Create Secret</DialogTitle>
+                      <DialogDescription>
+                        Add a new secret to this project
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="secret-path">Path</Label>
+                        <Input
+                          id="secret-path"
+                          placeholder="services/payment/prod/STRIPE_KEY"
+                          value={newPath}
+                          onChange={(e) => setNewPath(e.target.value)}
+                          required
+                          autoFocus
+                          className="font-mono"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Use forward slashes to create folders: services/payment/prod/STRIPE_KEY
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="secret-value">Value</Label>
+                        <Textarea
+                          id="secret-value"
+                          placeholder="sk_live_xxxxxxxxxxxxx"
+                          value={newValue}
+                          onChange={(e) => setNewValue(e.target.value)}
+                          required
+                          rows={3}
+                          className="font-mono"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="secret-desc">
+                          Description (optional)
+                        </Label>
+                        <Input
+                          id="secret-desc"
+                          placeholder="Stripe production API key"
+                          value={newDescription}
+                          onChange={(e) => setNewDescription(e.target.value)}
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="secret-value">Value</Label>
-                      <Textarea
-                        id="secret-value"
-                        placeholder="sk_live_xxxxxxxxxxxxx"
-                        value={newValue}
-                        onChange={(e) => setNewValue(e.target.value)}
-                        required
-                        rows={3}
-                        className="font-mono"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="secret-desc">Description (optional)</Label>
-                      <Input
-                        id="secret-desc"
-                        placeholder="Stripe production API key"
-                        value={newDescription}
-                        onChange={(e) => setNewDescription(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit" disabled={creating}>
-                      {creating ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Creating…
-                        </>
-                      ) : (
-                        "Create Secret"
-                      )}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
+                    <DialogFooter>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setDialogOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={creating}>
+                        {creating ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Creating…
+                          </>
+                        ) : (
+                          "Create Secret"
+                        )}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
         </div>
 
-        {/* Secrets table */}
+        {/* Secrets content */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -246,7 +281,14 @@ export default function ProjectSecretsPage() {
               New Secret
             </Button>
           </div>
+        ) : viewMode === "tree" ? (
+          /* ─── FOLDER TREE VIEW ─── */
+          <SecretTree
+            secrets={secretList}
+            onSelectSecret={handleSelectSecret}
+          />
         ) : (
+          /* ─── LIST VIEW (original) ─── */
           <div className="border rounded-lg">
             <Table>
               <TableHeader>
@@ -265,7 +307,9 @@ export default function ProjectSecretsPage() {
                     className="cursor-pointer"
                     onClick={() =>
                       router.push(
-                        `/projects/${projectId}/secrets/${encodeURIComponent(secret.path)}`
+                        `/projects/${projectId}/secrets/${encodeURIComponent(
+                          secret.path
+                        )}`
                       )
                     }
                   >

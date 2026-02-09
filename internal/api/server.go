@@ -2,33 +2,56 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/teamvault/teamvault/internal/audit"
 	"github.com/teamvault/teamvault/internal/auth"
 	"github.com/teamvault/teamvault/internal/crypto"
 	"github.com/teamvault/teamvault/internal/db"
+	"github.com/teamvault/teamvault/internal/lease"
 	"github.com/teamvault/teamvault/internal/policy"
+	"github.com/teamvault/teamvault/internal/rotation"
 )
 
 // Server holds all dependencies for the HTTP API.
 type Server struct {
-	db     *db.DB
-	auth   *auth.Auth
-	crypto *crypto.EnvelopeCrypto
-	policy *policy.Engine
-	audit  *audit.Logger
-	mux    *http.ServeMux
+	db                 *db.DB
+	auth               *auth.Auth
+	crypto             *crypto.EnvelopeCrypto
+	policy             *policy.Engine
+	audit              *audit.Logger
+	oidcClient         *auth.OIDCClient
+	rotationScheduler  *rotation.Scheduler
+	leaseManager       *lease.Manager
+	mux                *http.ServeMux
+	rl                 *rateLimiter
+}
+
+// ServerConfig holds optional dependencies for the server.
+type ServerConfig struct {
+	OIDCClient        *auth.OIDCClient
+	RotationScheduler *rotation.Scheduler
+	LeaseManager      *lease.Manager
 }
 
 // NewServer creates a new API server with all routes configured.
 func NewServer(database *db.DB, authSvc *auth.Auth, cryptoSvc *crypto.EnvelopeCrypto, policySvc *policy.Engine, auditSvc *audit.Logger) *Server {
+	return NewServerWithConfig(database, authSvc, cryptoSvc, policySvc, auditSvc, ServerConfig{})
+}
+
+// NewServerWithConfig creates a new API server with optional production dependencies.
+func NewServerWithConfig(database *db.DB, authSvc *auth.Auth, cryptoSvc *crypto.EnvelopeCrypto, policySvc *policy.Engine, auditSvc *audit.Logger, config ServerConfig) *Server {
 	s := &Server{
-		db:     database,
-		auth:   authSvc,
-		crypto: cryptoSvc,
-		policy: policySvc,
-		audit:  auditSvc,
-		mux:    http.NewServeMux(),
+		db:                database,
+		auth:              authSvc,
+		crypto:            cryptoSvc,
+		policy:            policySvc,
+		audit:             auditSvc,
+		oidcClient:        config.OIDCClient,
+		rotationScheduler: config.RotationScheduler,
+		leaseManager:      config.LeaseManager,
+		mux:               http.NewServeMux(),
+		rl:                newRateLimiter(100, 200), // 100 req/s per IP, burst 200
 	}
 
 	s.setupRoutes()
@@ -37,17 +60,32 @@ func NewServer(database *db.DB, authSvc *auth.Auth, cryptoSvc *crypto.EnvelopeCr
 
 // Handler returns the HTTP handler with middleware applied.
 func (s *Server) Handler() http.Handler {
-	return s.loggingMiddleware(s.mux)
+	// Chain middleware: request ID → rate limiting → logging → redaction → routes
+	var handler http.Handler = s.mux
+	handler = s.loggingMiddleware(handler)
+	handler = rateLimitMiddleware(s.rl)(handler)
+	handler = requestIDMiddleware(handler)
+	return handler
+}
+
+// DB returns the database for use by health checks.
+func (s *Server) DB() *db.DB {
+	return s.db
 }
 
 // setupRoutes configures all API routes.
 func (s *Server) setupRoutes() {
-	// Health check
+	// Health check (no auth required)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
+	s.mux.HandleFunc("GET /ready", s.handleReady)
 
 	// Auth endpoints (no auth required)
 	s.mux.HandleFunc("POST /api/v1/auth/register", s.handleRegister)
 	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
+
+	// OIDC endpoints (no auth required)
+	s.mux.HandleFunc("GET /api/v1/auth/oidc/authorize", s.handleOIDCAuthorize)
+	s.mux.HandleFunc("GET /api/v1/auth/oidc/callback", s.handleOIDCCallback)
 
 	// Auth-required endpoints
 	s.mux.Handle("GET /api/v1/auth/me", s.authMiddleware(http.HandlerFunc(s.handleMe)))
@@ -61,6 +99,9 @@ func (s *Server) setupRoutes() {
 	s.mux.Handle("GET /api/v1/secrets/{project}/{path...}", s.authMiddleware(http.HandlerFunc(s.handleGetSecret)))
 	s.mux.Handle("GET /api/v1/secrets/{project}", s.authMiddleware(http.HandlerFunc(s.handleListSecrets)))
 	s.mux.Handle("DELETE /api/v1/secrets/{project}/{path...}", s.authMiddleware(http.HandlerFunc(s.handleDeleteSecret)))
+
+	// Rotation (POST to path-based endpoints, handled via path suffix matching)
+	s.mux.Handle("POST /api/v1/secrets/{project}/{path...}", s.authMiddleware(http.HandlerFunc(s.handleSecretPost)))
 
 	// Secret versions
 	s.mux.Handle("GET /api/v1/secret-versions/{project}/{path...}", s.authMiddleware(http.HandlerFunc(s.handleListSecretVersions)))
@@ -102,8 +143,40 @@ func (s *Server) setupRoutes() {
 	s.mux.Handle("GET /api/v1/iam-policies/{id}", s.authMiddleware(http.HandlerFunc(s.handleGetIAMPolicy)))
 	s.mux.Handle("PUT /api/v1/iam-policies/{id}", s.authMiddleware(http.HandlerFunc(s.handleUpdateIAMPolicy)))
 	s.mux.Handle("DELETE /api/v1/iam-policies/{id}", s.authMiddleware(http.HandlerFunc(s.handleDeleteIAMPolicy)))
+
+	// Leases (Dynamic Secrets)
+	s.mux.Handle("POST /api/v1/lease/database", s.authMiddleware(http.HandlerFunc(s.handleIssueDatabaseLease)))
+	s.mux.Handle("POST /api/v1/lease/{id}/revoke", s.authMiddleware(http.HandlerFunc(s.handleRevokeLease)))
+	s.mux.Handle("GET /api/v1/leases", s.authMiddleware(http.HandlerFunc(s.handleListLeases)))
+}
+
+// handleSecretPost dispatches POST requests to secrets paths based on suffix.
+// POST /api/v1/secrets/{project}/{path...} handles:
+//   - .../rotation → set rotation schedule
+//   - .../rotate → manual rotate
+func (s *Server) handleSecretPost(w http.ResponseWriter, r *http.Request) {
+	path := r.PathValue("path")
+
+	if strings.HasSuffix(path, "/rotation") {
+		s.handleSetRotation(w, r)
+		return
+	}
+	if strings.HasSuffix(path, "/rotate") {
+		s.handleManualRotate(w, r)
+		return
+	}
+
+	writeError(w, http.StatusBadRequest, "use PUT to create/update secrets, or POST to .../rotation or .../rotate")
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	if err := s.db.Ping(r.Context()); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "database not ready")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }

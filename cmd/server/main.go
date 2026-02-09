@@ -22,7 +22,9 @@ import (
 	"github.com/teamvault/teamvault/internal/auth"
 	"github.com/teamvault/teamvault/internal/crypto"
 	"github.com/teamvault/teamvault/internal/db"
+	"github.com/teamvault/teamvault/internal/lease"
 	"github.com/teamvault/teamvault/internal/policy"
+	"github.com/teamvault/teamvault/internal/rotation"
 )
 
 func main() {
@@ -30,7 +32,8 @@ func main() {
 	migrationsDir := flag.String("migrations-dir", "migrations", "Path to migrations directory")
 	flag.Parse()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// Load config from environment
 	databaseURL := requireEnv("DATABASE_URL")
@@ -71,8 +74,42 @@ func main() {
 	// Initialize audit logger
 	auditSvc := audit.NewLogger(database)
 
-	// Create API server
-	apiServer := api.NewServer(database, authSvc, cryptoSvc, policySvc, auditSvc)
+	// Initialize OIDC client (optional — graceful degradation if not configured)
+	oidcConfig := auth.OIDCConfig{
+		Issuer:       os.Getenv("OIDC_ISSUER"),
+		ClientID:     os.Getenv("OIDC_CLIENT_ID"),
+		ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
+		RedirectURI:  os.Getenv("OIDC_REDIRECT_URI"),
+	}
+	oidcClient := auth.NewOIDCClient(oidcConfig)
+	if oidcClient != nil {
+		if err := oidcClient.Discover(ctx); err != nil {
+			log.Printf("WARNING: OIDC discovery failed (OIDC login will be unavailable): %v", err)
+			oidcClient = nil
+		} else {
+			log.Printf("OIDC configured with issuer: %s", oidcConfig.Issuer)
+		}
+	} else {
+		log.Println("OIDC not configured (set OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_REDIRECT_URI to enable)")
+	}
+
+	// Initialize rotation scheduler
+	rotationScheduler := rotation.NewScheduler(database, cryptoSvc)
+	go rotationScheduler.Start(ctx)
+	log.Println("Rotation scheduler started")
+
+	// Initialize lease manager
+	leaseManager := lease.NewManager(database, cryptoSvc)
+	go leaseManager.StartCleanup(ctx)
+	log.Println("Lease cleanup goroutine started")
+
+	// Create API server with all production dependencies
+	serverConfig := api.ServerConfig{
+		OIDCClient:        oidcClient,
+		RotationScheduler: rotationScheduler,
+		LeaseManager:      leaseManager,
+	}
+	apiServer := api.NewServerWithConfig(database, authSvc, cryptoSvc, policySvc, auditSvc, serverConfig)
 
 	// Create HTTP server
 	srv := &http.Server{
@@ -83,7 +120,7 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Graceful shutdown
+	// Graceful shutdown on SIGTERM/SIGINT
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
@@ -95,16 +132,22 @@ func main() {
 	}()
 
 	<-done
-	log.Println("Shutting down server...")
+	log.Println("Shutdown signal received, gracefully stopping...")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// Stop background goroutines
+	cancel()
+	rotationScheduler.Stop()
+	leaseManager.Stop()
+
+	// Graceful HTTP shutdown with timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("Server shutdown error: %v", err)
 	}
 
-	log.Println("Server stopped")
+	log.Println("Server stopped gracefully")
 }
 
 func requireEnv(key string) string {

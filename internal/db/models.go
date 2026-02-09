@@ -26,13 +26,15 @@ type Project struct {
 
 // Secret represents a secret entry (metadata only, no value).
 type Secret struct {
-	ID          string     `json:"id"`
-	ProjectID   string     `json:"project_id"`
-	Path        string     `json:"path"`
-	Description string     `json:"description,omitempty"`
-	CreatedBy   string     `json:"created_by"`
-	CreatedAt   time.Time  `json:"created_at"`
-	DeletedAt   *time.Time `json:"deleted_at,omitempty"`
+	ID          string          `json:"id"`
+	ProjectID   string          `json:"project_id"`
+	Path        string          `json:"path"`
+	Description string          `json:"description,omitempty"`
+	SecretType  string          `json:"secret_type"`
+	Metadata    json.RawMessage `json:"metadata,omitempty"`
+	CreatedBy   string          `json:"created_by"`
+	CreatedAt   time.Time       `json:"created_at"`
+	DeletedAt   *time.Time      `json:"deleted_at,omitempty"`
 }
 
 // SecretVersion represents an encrypted version of a secret value.
@@ -141,4 +143,34 @@ type AuditEvent struct {
 	Metadata  json.RawMessage `json:"metadata,omitempty"`
 	PrevHash  string          `json:"prev_hash,omitempty"`
 	Hash      string          `json:"hash"`
+}
+
+// RotationSchedule represents a secret rotation schedule.
+type RotationSchedule struct {
+	ID              string          `json:"id"`
+	SecretID        string          `json:"secret_id"`
+	CronExpression  string          `json:"cron_expression"`
+	ConnectorType   string          `json:"connector_type"`
+	ConnectorConfig json.RawMessage `json:"connector_config,omitempty"`
+	LastRotatedAt   *time.Time      `json:"last_rotated_at,omitempty"`
+	NextRotationAt  time.Time       `json:"next_rotation_at"`
+	Status          string          `json:"status"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+}
+
+// Lease represents a dynamic secret lease.
+type Lease struct {
+	ID              string     `json:"id"`
+	OrgID           *string    `json:"org_id,omitempty"`
+	SecretPath      string     `json:"secret_path"`
+	LeaseType       string     `json:"lease_type"`
+	ValueCiphertext []byte     `json:"-"`
+	EncryptedDEK    []byte     `json:"-"`
+	Nonce           []byte     `json:"-"`
+	DEKNonce        []byte     `json:"-"`
+	IssuedTo        string     `json:"issued_to"`
+	IssuedAt        time.Time  `json:"issued_at"`
+	ExpiresAt       time.Time  `json:"expires_at"`
+	RevokedAt       *time.Time `json:"revoked_at,omitempty"`
 }

@@ -2,36 +2,72 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 )
 
 // CreateSecret creates a new secret entry (metadata only).
 func (db *DB) CreateSecret(ctx context.Context, projectID, path, description, createdBy string) (*Secret, error) {
+	return db.CreateSecretWithType(ctx, projectID, path, description, "kv", nil, createdBy)
+}
+
+// CreateSecretWithType creates a new secret entry with a specific type and metadata.
+func (db *DB) CreateSecretWithType(ctx context.Context, projectID, path, description, secretType string, metadata json.RawMessage, createdBy string) (*Secret, error) {
+	if secretType == "" {
+		secretType = "kv"
+	}
 	secret := &Secret{}
 	err := db.Pool.QueryRow(ctx,
-		`INSERT INTO secrets (project_id, path, description, created_by)
-		 VALUES ($1, $2, $3, $4)
-		 RETURNING id, project_id, path, COALESCE(description, ''), created_by, created_at, deleted_at`,
-		projectID, path, description, createdBy,
+		`INSERT INTO secrets (project_id, path, description, secret_type, metadata, created_by)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 RETURNING id, project_id, path, COALESCE(description, ''), secret_type, metadata, created_by, created_at, deleted_at`,
+		projectID, path, description, secretType, metadata, createdBy,
 	).Scan(&secret.ID, &secret.ProjectID, &secret.Path, &secret.Description,
-		&secret.CreatedBy, &secret.CreatedAt, &secret.DeletedAt)
+		&secret.SecretType, &secret.Metadata, &secret.CreatedBy, &secret.CreatedAt, &secret.DeletedAt)
 	if err != nil {
 		return nil, fmt.Errorf("creating secret: %w", err)
 	}
 	return secret, nil
 }
 
+// UpdateSecretType updates the type and metadata of a secret.
+func (db *DB) UpdateSecretType(ctx context.Context, secretID, secretType string, metadata json.RawMessage) error {
+	_, err := db.Pool.Exec(ctx,
+		`UPDATE secrets SET secret_type = $2, metadata = $3 WHERE id = $1`,
+		secretID, secretType, metadata,
+	)
+	if err != nil {
+		return fmt.Errorf("updating secret type: %w", err)
+	}
+	return nil
+}
+
 // GetSecret retrieves a secret by project ID and path.
 func (db *DB) GetSecret(ctx context.Context, projectID, path string) (*Secret, error) {
 	secret := &Secret{}
 	err := db.Pool.QueryRow(ctx,
-		`SELECT id, project_id, path, COALESCE(description, ''), created_by, created_at, deleted_at
+		`SELECT id, project_id, path, COALESCE(description, ''), COALESCE(secret_type, 'kv'), metadata, created_by, created_at, deleted_at
 		 FROM secrets WHERE project_id = $1 AND path = $2 AND deleted_at IS NULL`,
 		projectID, path,
 	).Scan(&secret.ID, &secret.ProjectID, &secret.Path, &secret.Description,
-		&secret.CreatedBy, &secret.CreatedAt, &secret.DeletedAt)
+		&secret.SecretType, &secret.Metadata, &secret.CreatedBy, &secret.CreatedAt, &secret.DeletedAt)
 	if err != nil {
 		return nil, fmt.Errorf("getting secret: %w", err)
+	}
+	return secret, nil
+}
+
+// GetSecretByID retrieves a secret by its ID.
+func (db *DB) GetSecretByID(ctx context.Context, id string) (*Secret, error) {
+	secret := &Secret{}
+	err := db.Pool.QueryRow(ctx,
+		`SELECT id, project_id, path, COALESCE(description, ''), COALESCE(secret_type, 'kv'), metadata, created_by, created_at, deleted_at
+		 FROM secrets WHERE id = $1`,
+		id,
+	).Scan(&secret.ID, &secret.ProjectID, &secret.Path, &secret.Description,
+		&secret.SecretType, &secret.Metadata, &secret.CreatedBy, &secret.CreatedAt, &secret.DeletedAt)
+	if err != nil {
+		return nil, fmt.Errorf("getting secret by id: %w", err)
 	}
 	return secret, nil
 }
@@ -39,7 +75,7 @@ func (db *DB) GetSecret(ctx context.Context, projectID, path string) (*Secret, e
 // ListSecrets lists all active secrets in a project.
 func (db *DB) ListSecrets(ctx context.Context, projectID string) ([]Secret, error) {
 	rows, err := db.Pool.Query(ctx,
-		`SELECT id, project_id, path, COALESCE(description, ''), created_by, created_at, deleted_at
+		`SELECT id, project_id, path, COALESCE(description, ''), COALESCE(secret_type, 'kv'), metadata, created_by, created_at, deleted_at
 		 FROM secrets WHERE project_id = $1 AND deleted_at IS NULL
 		 ORDER BY path`,
 		projectID,
@@ -53,7 +89,7 @@ func (db *DB) ListSecrets(ctx context.Context, projectID string) ([]Secret, erro
 	for rows.Next() {
 		var s Secret
 		if err := rows.Scan(&s.ID, &s.ProjectID, &s.Path, &s.Description,
-			&s.CreatedBy, &s.CreatedAt, &s.DeletedAt); err != nil {
+			&s.SecretType, &s.Metadata, &s.CreatedBy, &s.CreatedAt, &s.DeletedAt); err != nil {
 			return nil, fmt.Errorf("scanning secret: %w", err)
 		}
 		secrets = append(secrets, s)

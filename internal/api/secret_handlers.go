@@ -13,17 +13,29 @@ import (
 type putSecretRequest struct {
 	Value       string `json:"value"`
 	Description string `json:"description"`
+	// File/blob secret fields
+	Type        string `json:"type,omitempty"`         // "kv", "json", "file" (default: "kv")
+	Filename    string `json:"filename,omitempty"`      // For file type
+	ContentType string `json:"content_type,omitempty"`  // For file type (e.g., "application/x-pem-file")
 }
 
 type secretResponse struct {
-	ID          string `json:"id"`
-	ProjectID   string `json:"project_id"`
-	Project     string `json:"project"`
-	Path        string `json:"path"`
-	Description string `json:"description,omitempty"`
-	Version     int    `json:"version"`
-	Value       string `json:"value,omitempty"` // Only present on read
-	CreatedBy   string `json:"created_by"`
+	ID          string          `json:"id"`
+	ProjectID   string          `json:"project_id"`
+	Project     string          `json:"project"`
+	Path        string          `json:"path"`
+	Description string          `json:"description,omitempty"`
+	SecretType  string          `json:"secret_type"`
+	Metadata    json.RawMessage `json:"metadata,omitempty"`
+	Version     int             `json:"version"`
+	Value       string          `json:"value,omitempty"` // Only present on read
+	CreatedBy   string          `json:"created_by"`
+}
+
+// fileMetadata is stored in the secret's metadata column for file-type secrets.
+type fileMetadata struct {
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
 }
 
 func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +52,16 @@ func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 
 	// Strip /versions suffix if accidentally routed here
 	secretPath = strings.TrimSuffix(secretPath, "/versions")
+
+	// Redirect rotation PUTs to the rotation handler
+	if strings.HasSuffix(secretPath, "/rotation") {
+		s.handleSetRotation(w, r)
+		return
+	}
+	if strings.HasSuffix(secretPath, "/rotate") {
+		s.handleManualRotate(w, r)
+		return
+	}
 
 	resource := projectName + "/" + secretPath
 
@@ -88,6 +110,36 @@ func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Determine secret type
+	secretType := req.Type
+	if secretType == "" {
+		secretType = "kv"
+	}
+	if secretType != "kv" && secretType != "json" && secretType != "file" {
+		writeError(w, http.StatusBadRequest, "type must be 'kv', 'json', or 'file'")
+		return
+	}
+
+	// For file type, filename is required
+	if secretType == "file" && req.Filename == "" {
+		writeError(w, http.StatusBadRequest, "filename is required for file type secrets")
+		return
+	}
+
+	// Build metadata for file type
+	var metadata json.RawMessage
+	if secretType == "file" {
+		ct := req.ContentType
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		fm := fileMetadata{
+			Filename:    req.Filename,
+			ContentType: ct,
+		}
+		metadata, _ = json.Marshal(fm)
+	}
+
 	// Get or create the project
 	project, err := s.db.GetProjectByName(ctx, projectName)
 	if err != nil {
@@ -98,11 +150,21 @@ func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 	// Get or create the secret
 	secret, err := s.db.GetSecret(ctx, project.ID, secretPath)
 	if err != nil {
-		// Create a new secret
-		secret, err = s.db.CreateSecret(ctx, project.ID, secretPath, req.Description, actorID)
+		// Create a new secret with type
+		secret, err = s.db.CreateSecretWithType(ctx, project.ID, secretPath, req.Description, secretType, metadata, actorID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to create secret")
 			return
+		}
+	} else {
+		// Update existing secret's type and metadata if changed
+		if secretType != secret.SecretType || metadata != nil {
+			if err := s.db.UpdateSecretType(ctx, secret.ID, secretType, metadata); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to update secret type")
+				return
+			}
+			secret.SecretType = secretType
+			secret.Metadata = metadata
 		}
 	}
 
@@ -138,7 +200,7 @@ func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 		Resource:  resource,
 		Outcome:   "success",
 		IP:        getClientIP(ctx),
-		Metadata:  json.RawMessage(`{"version":` + itoa(sv.Version) + `}`),
+		Metadata:  json.RawMessage(`{"version":` + itoa(sv.Version) + `,"type":"` + secretType + `"}`),
 	})
 
 	writeJSON(w, http.StatusOK, secretResponse{
@@ -147,6 +209,8 @@ func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 		Project:     project.Name,
 		Path:        secret.Path,
 		Description: secret.Description,
+		SecretType:  secretType,
+		Metadata:    metadata,
 		Version:     sv.Version,
 		CreatedBy:   actorID,
 	})
@@ -162,6 +226,12 @@ func (s *Server) handleGetSecret(w http.ResponseWriter, r *http.Request) {
 	// Check if this is actually a versions request
 	if strings.HasSuffix(secretPath, "/versions") {
 		s.handleListSecretVersions(w, r)
+		return
+	}
+
+	// Check if this is a rotation request (POST only, handled elsewhere)
+	if strings.HasSuffix(secretPath, "/rotation") || strings.HasSuffix(secretPath, "/rotate") {
+		writeError(w, http.StatusMethodNotAllowed, "use POST for rotation endpoints")
 		return
 	}
 
@@ -248,12 +318,23 @@ func (s *Server) handleGetSecret(w http.ResponseWriter, r *http.Request) {
 		Metadata:  json.RawMessage(`{"version":` + itoa(sv.Version) + `}`),
 	})
 
+	// For file-type secrets, set content-type header if metadata contains it
+	if secret.SecretType == "file" && secret.Metadata != nil {
+		var fm fileMetadata
+		if err := json.Unmarshal(secret.Metadata, &fm); err == nil && fm.ContentType != "" {
+			w.Header().Set("X-Secret-Content-Type", fm.ContentType)
+			w.Header().Set("X-Secret-Filename", fm.Filename)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, secretResponse{
 		ID:          secret.ID,
 		ProjectID:   project.ID,
 		Project:     project.Name,
 		Path:        secret.Path,
 		Description: secret.Description,
+		SecretType:  secret.SecretType,
+		Metadata:    secret.Metadata,
 		Version:     sv.Version,
 		Value:       string(plaintext),
 		CreatedBy:   sv.CreatedBy,
@@ -278,11 +359,13 @@ func (s *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
 
 	// Return metadata only (no values)
 	type secretListItem struct {
-		ID          string `json:"id"`
-		Path        string `json:"path"`
-		Description string `json:"description,omitempty"`
-		CreatedBy   string `json:"created_by"`
-		CreatedAt   string `json:"created_at"`
+		ID          string          `json:"id"`
+		Path        string          `json:"path"`
+		Description string          `json:"description,omitempty"`
+		SecretType  string          `json:"secret_type"`
+		Metadata    json.RawMessage `json:"metadata,omitempty"`
+		CreatedBy   string          `json:"created_by"`
+		CreatedAt   string          `json:"created_at"`
 	}
 
 	items := make([]secretListItem, 0, len(secrets))
@@ -291,6 +374,8 @@ func (s *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
 			ID:          sec.ID,
 			Path:        sec.Path,
 			Description: sec.Description,
+			SecretType:  sec.SecretType,
+			Metadata:    sec.Metadata,
 			CreatedBy:   sec.CreatedBy,
 			CreatedAt:   sec.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		})
