@@ -659,24 +659,38 @@ cd web && npm run dev   # Web UI on localhost:3000
 
 ## Roadmap
 
+### Done
+
 - [x] Secret CRUD with envelope encryption (AES-256-GCM)
 - [x] JWT auth + service account tokens
-- [x] Hash-chained audit log
-- [x] CLI: login, kv get/put/list, run (env injection)
-- [x] Web UI: projects, secrets, audit, settings
+- [x] Hash-chained audit log (tamper-evident)
+- [x] CLI: login, kv get/put/list/tree, run (env injection via syscall.Exec)
+- [x] Web UI: projects, secrets, audit, settings (Next.js 16, shadcn/ui, dark mode)
 - [x] Docker Compose one-command startup
-- [x] OpenClaw integration (env hook)
-- [ ] Org/Team/Agent hierarchy
-- [ ] HCL policy engine (RBAC + ABAC + PBAC)
-- [ ] Vault-style folder tree in Web UI
-- [ ] File/blob secret type
-- [ ] Secret rotation framework
-- [ ] Dynamic secrets (database, cloud tokens)
-- [ ] SSO/OIDC/SAML integration
-- [ ] Terraform provider
-- [ ] TEE Confidential Data Plane
-- [ ] ZK selective disclosure auth
-- [ ] Browser extension for E2E viewing
+- [x] OpenClaw integration (env hook + teamvault.json config)
+- [x] Org/Team/Agent hierarchy (enterprise IAM)
+- [x] HCL policy engine (RBAC + ABAC + PBAC, Terraform-style)
+- [x] Vault-style folder tree navigation (CLI + Web UI)
+- [x] File/blob secret type
+- [x] Secret rotation framework (cron scheduler + connector plugins)
+- [x] Dynamic secrets with leases (issue/revoke/TTL/auto-cleanup)
+- [x] SSO/OIDC integration (graceful degradation)
+- [x] Terraform provider stub (teamvault_secret, teamvault_policy, teamvault_project)
+- [x] Production hardening: rate limiting, request ID, graceful shutdown, health/ready
+- [x] CLI: rotation, lease, doctor, export/import, OIDC login
+- [x] Web: rotation UI, leases page, SSO button, version diff, dashboard stats
+- [x] E2E demo script (9-step automated demo)
+
+### Next
+
+- [ ] TEE Confidential Data Plane (server-side encryption in enclave)
+- [ ] ZK selective disclosure auth (BBS+ credentials)
+- [ ] Browser extension for E2E secret viewing
+- [ ] Kubernetes sidecar injector / CSI driver
+- [ ] Full Terraform provider (with acceptance tests)
+- [ ] Secret scanning (pre-commit hooks)
+- [ ] Webhooks for secret change notifications
+- [ ] Multi-region replication
 
 ---
 
