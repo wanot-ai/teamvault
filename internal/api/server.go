@@ -75,6 +75,33 @@ func (s *Server) setupRoutes() {
 
 	// Audit
 	s.mux.Handle("GET /api/v1/audit", s.authMiddleware(http.HandlerFunc(s.handleListAuditEvents)))
+
+	// Organizations
+	s.mux.Handle("POST /api/v1/orgs", s.authMiddleware(http.HandlerFunc(s.handleCreateOrg)))
+	s.mux.Handle("GET /api/v1/orgs", s.authMiddleware(http.HandlerFunc(s.handleListOrgs)))
+	s.mux.Handle("GET /api/v1/orgs/{id}", s.authMiddleware(http.HandlerFunc(s.handleGetOrg)))
+
+	// Teams (nested under orgs)
+	s.mux.Handle("POST /api/v1/orgs/{id}/teams", s.authMiddleware(http.HandlerFunc(s.handleCreateTeam)))
+	s.mux.Handle("GET /api/v1/orgs/{id}/teams", s.authMiddleware(http.HandlerFunc(s.handleListTeams)))
+
+	// Team Members
+	s.mux.Handle("POST /api/v1/teams/{id}/members", s.authMiddleware(http.HandlerFunc(s.handleAddTeamMember)))
+	s.mux.Handle("DELETE /api/v1/teams/{id}/members", s.authMiddleware(http.HandlerFunc(s.handleRemoveTeamMember)))
+	s.mux.Handle("GET /api/v1/teams/{id}/members", s.authMiddleware(http.HandlerFunc(s.handleListTeamMembers)))
+
+	// Agents (nested under teams)
+	s.mux.Handle("POST /api/v1/teams/{id}/agents", s.authMiddleware(http.HandlerFunc(s.handleCreateAgent)))
+	s.mux.Handle("GET /api/v1/teams/{id}/agents", s.authMiddleware(http.HandlerFunc(s.handleListAgents)))
+	s.mux.Handle("GET /api/v1/agents/{agentId}", s.authMiddleware(http.HandlerFunc(s.handleGetAgent)))
+	s.mux.Handle("DELETE /api/v1/agents/{agentId}", s.authMiddleware(http.HandlerFunc(s.handleDeleteAgent)))
+
+	// IAM Policies
+	s.mux.Handle("POST /api/v1/iam-policies", s.authMiddleware(http.HandlerFunc(s.handleCreateIAMPolicy)))
+	s.mux.Handle("GET /api/v1/iam-policies", s.authMiddleware(http.HandlerFunc(s.handleListIAMPolicies)))
+	s.mux.Handle("GET /api/v1/iam-policies/{id}", s.authMiddleware(http.HandlerFunc(s.handleGetIAMPolicy)))
+	s.mux.Handle("PUT /api/v1/iam-policies/{id}", s.authMiddleware(http.HandlerFunc(s.handleUpdateIAMPolicy)))
+	s.mux.Handle("DELETE /api/v1/iam-policies/{id}", s.authMiddleware(http.HandlerFunc(s.handleDeleteIAMPolicy)))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

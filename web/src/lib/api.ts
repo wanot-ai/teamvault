@@ -83,6 +83,87 @@ export interface AuditEvent {
   metadata: Record<string, unknown> | null;
 }
 
+// ─── Organization / Team / Agent Types ───────────────────────────────────────
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  owner_id: string;
+  created_at: string;
+  updated_at: string;
+  member_count?: number;
+  team_count?: number;
+}
+
+export interface Team {
+  id: string;
+  org_id: string;
+  name: string;
+  slug: string;
+  description: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  member_count?: number;
+  agent_count?: number;
+}
+
+export interface TeamMember {
+  id: string;
+  team_id: string;
+  user_id: string;
+  role: "owner" | "admin" | "member" | "viewer";
+  user: User;
+  added_by: string;
+  added_at: string;
+}
+
+export interface Agent {
+  id: string;
+  team_id: string;
+  name: string;
+  description: string;
+  scopes: string[];
+  token_status: "active" | "expired" | "revoked";
+  created_by: string;
+  created_at: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  token?: string; // Only returned on creation
+}
+
+// ─── IAM Policy Types ────────────────────────────────────────────────────────
+
+export type IAMPolicyType = "rbac" | "abac" | "pbac";
+
+export interface IAMPolicy {
+  id: string;
+  name: string;
+  description: string;
+  type: IAMPolicyType;
+  effect: "allow" | "deny";
+  hcl_source: string;
+  rules: IAMPolicyRule[];
+  conditions: Record<string, unknown> | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  enabled: boolean;
+}
+
+export interface IAMPolicyRule {
+  id: string;
+  policy_id: string;
+  actions: string[];
+  resources: string[];
+  subjects: string[];
+  conditions: Record<string, unknown> | null;
+}
+
+// ─── Request Types ───────────────────────────────────────────────────────────
+
 export interface LoginRequest {
   email: string;
   password: string;
@@ -124,6 +205,61 @@ export interface CreatePolicyRequest {
   subject_type: "user" | "service_account";
   subject_id?: string;
   conditions?: Record<string, unknown>;
+}
+
+export interface CreateOrganizationRequest {
+  name: string;
+  slug?: string;
+  description?: string;
+}
+
+export interface UpdateOrganizationRequest {
+  name?: string;
+  description?: string;
+}
+
+export interface CreateTeamRequest {
+  name: string;
+  slug?: string;
+  description?: string;
+}
+
+export interface UpdateTeamRequest {
+  name?: string;
+  description?: string;
+}
+
+export interface AddTeamMemberRequest {
+  user_id: string;
+  role: "admin" | "member" | "viewer";
+}
+
+export interface CreateAgentRequest {
+  name: string;
+  description?: string;
+  scopes: string[];
+  ttl_hours?: number;
+}
+
+export interface CreateIAMPolicyRequest {
+  name: string;
+  description?: string;
+  type: IAMPolicyType;
+  effect: "allow" | "deny";
+  hcl_source?: string;
+  rules?: Omit<IAMPolicyRule, "id" | "policy_id">[];
+  conditions?: Record<string, unknown>;
+  enabled?: boolean;
+}
+
+export interface UpdateIAMPolicyRequest {
+  name?: string;
+  description?: string;
+  effect?: "allow" | "deny";
+  hcl_source?: string;
+  rules?: Omit<IAMPolicyRule, "id" | "policy_id">[];
+  conditions?: Record<string, unknown>;
+  enabled?: boolean;
 }
 
 export interface AuditFilters {
@@ -267,7 +403,7 @@ export const serviceAccounts = {
     }),
 };
 
-// ─── Policies ────────────────────────────────────────────────────────────────
+// ─── Policies (legacy) ──────────────────────────────────────────────────────
 
 export const policies = {
   list: () => apiFetch<Policy[]>("/policies"),
@@ -276,6 +412,145 @@ export const policies = {
     apiFetch<Policy>("/policies", {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+};
+
+// ─── Organizations ───────────────────────────────────────────────────────────
+
+export const orgs = {
+  list: () => apiFetch<Organization[]>("/orgs"),
+
+  get: (orgId: string) => apiFetch<Organization>(`/orgs/${orgId}`),
+
+  create: (data: CreateOrganizationRequest) =>
+    apiFetch<Organization>("/orgs", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  update: (orgId: string, data: UpdateOrganizationRequest) =>
+    apiFetch<Organization>(`/orgs/${orgId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  delete: (orgId: string) =>
+    apiFetch<void>(`/orgs/${orgId}`, {
+      method: "DELETE",
+    }),
+};
+
+// ─── Teams ───────────────────────────────────────────────────────────────────
+
+export const teams = {
+  list: (orgId: string) => apiFetch<Team[]>(`/orgs/${orgId}/teams`),
+
+  get: (orgId: string, teamId: string) =>
+    apiFetch<Team>(`/orgs/${orgId}/teams/${teamId}`),
+
+  create: (orgId: string, data: CreateTeamRequest) =>
+    apiFetch<Team>(`/orgs/${orgId}/teams`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  update: (orgId: string, teamId: string, data: UpdateTeamRequest) =>
+    apiFetch<Team>(`/orgs/${orgId}/teams/${teamId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  delete: (orgId: string, teamId: string) =>
+    apiFetch<void>(`/orgs/${orgId}/teams/${teamId}`, {
+      method: "DELETE",
+    }),
+};
+
+// ─── Team Members ────────────────────────────────────────────────────────────
+
+export const teamMembers = {
+  list: (orgId: string, teamId: string) =>
+    apiFetch<TeamMember[]>(`/orgs/${orgId}/teams/${teamId}/members`),
+
+  add: (orgId: string, teamId: string, data: AddTeamMemberRequest) =>
+    apiFetch<TeamMember>(`/orgs/${orgId}/teams/${teamId}/members`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  remove: (orgId: string, teamId: string, userId: string) =>
+    apiFetch<void>(`/orgs/${orgId}/teams/${teamId}/members/${userId}`, {
+      method: "DELETE",
+    }),
+
+  updateRole: (orgId: string, teamId: string, userId: string, role: string) =>
+    apiFetch<TeamMember>(
+      `/orgs/${orgId}/teams/${teamId}/members/${userId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ role }),
+      }
+    ),
+};
+
+// ─── Agents ──────────────────────────────────────────────────────────────────
+
+export const agents = {
+  list: (orgId: string, teamId: string) =>
+    apiFetch<Agent[]>(`/orgs/${orgId}/teams/${teamId}/agents`),
+
+  get: (orgId: string, teamId: string, agentId: string) =>
+    apiFetch<Agent>(`/orgs/${orgId}/teams/${teamId}/agents/${agentId}`),
+
+  create: (orgId: string, teamId: string, data: CreateAgentRequest) =>
+    apiFetch<Agent>(`/orgs/${orgId}/teams/${teamId}/agents`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  revoke: (orgId: string, teamId: string, agentId: string) =>
+    apiFetch<Agent>(`/orgs/${orgId}/teams/${teamId}/agents/${agentId}/revoke`, {
+      method: "POST",
+    }),
+
+  delete: (orgId: string, teamId: string, agentId: string) =>
+    apiFetch<void>(`/orgs/${orgId}/teams/${teamId}/agents/${agentId}`, {
+      method: "DELETE",
+    }),
+};
+
+// ─── IAM Policies ────────────────────────────────────────────────────────────
+
+export const iamPolicies = {
+  list: (type?: IAMPolicyType) => {
+    const params = type ? `?type=${type}` : "";
+    return apiFetch<IAMPolicy[]>(`/iam/policies${params}`);
+  },
+
+  get: (policyId: string) =>
+    apiFetch<IAMPolicy>(`/iam/policies/${policyId}`),
+
+  create: (data: CreateIAMPolicyRequest) =>
+    apiFetch<IAMPolicy>("/iam/policies", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  update: (policyId: string, data: UpdateIAMPolicyRequest) =>
+    apiFetch<IAMPolicy>(`/iam/policies/${policyId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  delete: (policyId: string) =>
+    apiFetch<void>(`/iam/policies/${policyId}`, {
+      method: "DELETE",
+    }),
+
+  toggle: (policyId: string, enabled: boolean) =>
+    apiFetch<IAMPolicy>(`/iam/policies/${policyId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
     }),
 };
 

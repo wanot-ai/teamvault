@@ -1,0 +1,13 @@
+{
+  "server": "https://vault.example.com:8443",
+  "project": "my-openclaw-agent",
+  "mappings": {
+    "OPENROUTER_API_KEY": "providers/openrouter/api-key",
+    "OPENAI_API_KEY": "providers/openai/api-key",
+    "ANTHROPIC_API_KEY": "providers/anthropic/api-key",
+    "TELEGRAM_BOT_TOKEN": "channels/telegram/token",
+    "DISCORD_TOKEN": "channels/discord/token",
+    "BRAVE_API_KEY": "tools/brave-search/api-key",
+    "ELEVENLABS_API_KEY": "tools/elevenlabs/api-key"
+  }
+}

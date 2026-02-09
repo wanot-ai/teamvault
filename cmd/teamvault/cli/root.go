@@ -24,4 +24,7 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(tokenCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(policyCmd)
+	rootCmd.AddCommand(orgCmd)
+	rootCmd.AddCommand(teamCmd)
 }

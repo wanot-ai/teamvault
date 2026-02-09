@@ -17,18 +17,44 @@ import { Separator } from "@/components/ui/separator";
 import {
   Shield,
   LayoutDashboard,
-  FolderKey,
   ScrollText,
   Settings,
   LogOut,
   Loader2,
+  Building2,
+  Users,
+  ShieldCheck,
 } from "lucide-react";
 
-const navItems = [
-  { href: "/dashboard", label: "Projects", icon: LayoutDashboard },
-  { href: "/audit", label: "Audit Log", icon: ScrollText },
-  { href: "/settings", label: "Settings", icon: Settings },
+const navSections = [
+  {
+    label: "Main",
+    items: [
+      { href: "/dashboard", label: "Projects", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "Organization",
+    items: [
+      { href: "/orgs", label: "Organizations", icon: Building2 },
+    ],
+  },
+  {
+    label: "Security",
+    items: [
+      { href: "/policies", label: "IAM Policies", icon: ShieldCheck },
+      { href: "/audit", label: "Audit Log", icon: ScrollText },
+      { href: "/settings", label: "Settings", icon: Settings },
+    ],
+  },
 ];
+
+function isActive(pathname: string, href: string): boolean {
+  if (href === "/dashboard") {
+    return pathname === "/dashboard" || pathname.startsWith("/projects");
+  }
+  return pathname === href || pathname.startsWith(href + "/");
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, isLoading, logout } = useAuth();
@@ -71,23 +97,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {navItems.map((item) => {
-            const isActive =
-              pathname === item.href || pathname.startsWith(item.href + "/") ||
-              (item.href === "/dashboard" && pathname.startsWith("/projects"));
-            return (
-              <Link key={item.href} href={item.href}>
-                <Button
-                  variant={isActive ? "secondary" : "ghost"}
-                  className="w-full justify-start gap-3 h-10"
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Button>
-              </Link>
-            );
-          })}
+        <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto">
+          {navSections.map((section) => (
+            <div key={section.label}>
+              <p className="px-3 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                {section.label}
+              </p>
+              <div className="space-y-1">
+                {section.items.map((item) => {
+                  const active = isActive(pathname, item.href);
+                  return (
+                    <Link key={item.href} href={item.href}>
+                      <Button
+                        variant={active ? "secondary" : "ghost"}
+                        className="w-full justify-start gap-3 h-10"
+                      >
+                        <item.icon className="h-4 w-4" />
+                        {item.label}
+                      </Button>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* Bottom: user */}

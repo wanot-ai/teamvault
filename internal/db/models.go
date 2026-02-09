@@ -74,6 +74,60 @@ type Policy struct {
 	CreatedAt       time.Time       `json:"created_at"`
 }
 
+// Org represents an organization.
+type Org struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	CreatedBy   string    `json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// Team represents a team within an organization.
+type Team struct {
+	ID          string    `json:"id"`
+	OrgID       string    `json:"org_id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// TeamMember represents a user's membership in a team.
+type TeamMember struct {
+	TeamID   string    `json:"team_id"`
+	UserID   string    `json:"user_id"`
+	Role     string    `json:"role"`
+	JoinedAt time.Time `json:"joined_at"`
+}
+
+// Agent represents a machine/CI agent belonging to a team.
+type Agent struct {
+	ID          string          `json:"id"`
+	TeamID      string          `json:"team_id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	TokenHash   string          `json:"-"` // Never expose in JSON
+	Scopes      []string        `json:"scopes"`
+	Metadata    json.RawMessage `json:"metadata,omitempty"`
+	CreatedBy   string          `json:"created_by"`
+	CreatedAt   time.Time       `json:"created_at"`
+	ExpiresAt   *time.Time      `json:"expires_at,omitempty"`
+}
+
+// IAMPolicy represents an enterprise IAM policy (RBAC, ABAC, or PBAC).
+type IAMPolicy struct {
+	ID          string          `json:"id"`
+	OrgID       string          `json:"org_id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	PolicyType  string          `json:"policy_type"`
+	PolicyDoc   json.RawMessage `json:"policy_doc"`
+	HCLSource   string          `json:"hcl_source,omitempty"`
+	CreatedBy   string          `json:"created_by"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
 // AuditEvent represents a single audit log entry.
 type AuditEvent struct {
 	ID        string          `json:"id"`
