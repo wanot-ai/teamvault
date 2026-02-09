@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: teamvault
+      POSTGRES_PASSWORD: teamvault_dev
+      POSTGRES_DB: teamvault
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teamvault"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build: .
+    ports:
+      - "8443:8443"
+    environment:
+      DATABASE_URL: "postgres://teamvault:teamvault_dev@postgres:5432/teamvault?sslmode=disable"
+      JWT_SECRET: "dev-jwt-secret-change-in-production"
+      MASTER_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      LISTEN_ADDR: ":8443"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
