@@ -21,13 +21,13 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
 
-  // Handle OIDC callback token
+  // Handle OIDC callback — server redirects back with ?code= or ?token= param
   useEffect(() => {
-    const token = searchParams.get("token");
-    if (token) {
+    const code = searchParams.get("code") || searchParams.get("token");
+    if (code) {
       setSsoLoading(true);
       oidc
-        .callback(token)
+        .callback(code)
         .then((res) => {
           login(res.token, res.user);
           router.push("/dashboard");

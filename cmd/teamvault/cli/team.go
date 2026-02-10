@@ -36,13 +36,12 @@ type TeamMember struct {
 func (c *APIClient) CreateTeam(orgID, name, description string) (*TeamResponse, error) {
 	var resp TeamResponse
 	body := map[string]string{
-		"org_id": orgID,
-		"name":   name,
+		"name": name,
 	}
 	if description != "" {
 		body["description"] = description
 	}
-	err := c.do("POST", "/api/v1/teams", body, &resp)
+	err := c.do("POST", fmt.Sprintf("/api/v1/orgs/%s/teams", orgID), body, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -51,9 +50,7 @@ func (c *APIClient) CreateTeam(orgID, name, description string) (*TeamResponse, 
 
 // ListTeams returns all teams, optionally filtered by org.
 func (c *APIClient) ListTeams(orgID string) ([]TeamResponse, error) {
-	var resp struct {
-		Teams []TeamResponse `json:"teams"`
-	}
+	var resp []TeamResponse
 	path := "/api/v1/teams"
 	if orgID != "" {
 		path = fmt.Sprintf("/api/v1/teams?org_id=%s", orgID)
@@ -62,7 +59,7 @@ func (c *APIClient) ListTeams(orgID string) ([]TeamResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	return resp.Teams, nil
+	return resp, nil
 }
 
 // AddTeamMember adds a user to a team.
@@ -194,7 +191,19 @@ func runTeamCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	team, err := client.CreateTeam(teamCreateOrg, teamCreateName, teamCreateDescription)
+	// Resolve org name to org ID if needed (--org can be a name or UUID)
+	orgID := teamCreateOrg
+	orgs, err := client.ListOrgs()
+	if err == nil {
+		for _, o := range orgs {
+			if o.Name == teamCreateOrg || o.ID == teamCreateOrg {
+				orgID = o.ID
+				break
+			}
+		}
+	}
+
+	team, err := client.CreateTeam(orgID, teamCreateName, teamCreateDescription)
 	if err != nil {
 		return fmt.Errorf("failed to create team: %w", err)
 	}

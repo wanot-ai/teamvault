@@ -74,12 +74,13 @@ func NewServerWithConfig(database *db.DB, authSvc *auth.Auth, cryptoSvc *crypto.
 
 // Handler returns the HTTP handler with middleware applied.
 func (s *Server) Handler() http.Handler {
-	// Chain middleware: request ID → rate limiting → logging → redaction → routes
+	// Chain middleware: security headers → CORS → request ID → rate limiting → logging → routes
 	var handler http.Handler = s.mux
 	handler = s.loggingMiddleware(handler)
 	handler = rateLimitMiddleware(s.rl)(handler)
 	handler = requestIDMiddleware(handler)
 	handler = corsMiddleware(handler)
+	handler = securityHeadersMiddleware(handler)
 	return handler
 }
 
@@ -129,8 +130,8 @@ func (s *Server) setupRoutes() {
 	s.mux.Handle("POST /api/v1/policies", s.authMiddleware(s.adminOnly(http.HandlerFunc(s.handleCreatePolicy))))
 	s.mux.Handle("GET /api/v1/policies", s.authMiddleware(http.HandlerFunc(s.handleListPolicies)))
 
-	// Audit
-	s.mux.Handle("GET /api/v1/audit", s.authMiddleware(http.HandlerFunc(s.handleListAuditEvents)))
+	// Audit (admin-only)
+	s.mux.Handle("GET /api/v1/audit", s.authMiddleware(s.adminOnly(http.HandlerFunc(s.handleListAuditEvents))))
 
 	// Organizations
 	s.mux.Handle("POST /api/v1/orgs", s.authMiddleware(http.HandlerFunc(s.handleCreateOrg)))

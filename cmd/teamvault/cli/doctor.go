@@ -36,7 +36,7 @@ type HealthComponentStatus struct {
 // Health queries the server health endpoint (no auth required).
 func (c *APIClient) Health() (*HealthResponse, error) {
 	var resp HealthResponse
-	err := c.do("GET", "/api/v1/health", nil, &resp)
+	err := c.do("GET", "/health", nil, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func checkServerReachable(server string) checkResult {
 	client := &http.Client{Timeout: 10 * time.Second}
 
 	start := time.Now()
-	resp, err := client.Get(server + "/api/v1/health")
+	resp, err := client.Get(server + "/health")
 	elapsed := time.Since(start)
 
 	if err != nil {

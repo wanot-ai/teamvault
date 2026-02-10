@@ -43,14 +43,12 @@ func (c *APIClient) ApplyPolicy(hclSource string) (*PolicyResponse, error) {
 
 // ListPolicies returns all policies.
 func (c *APIClient) ListPolicies() ([]PolicyResponse, error) {
-	var resp struct {
-		Policies []PolicyResponse `json:"policies"`
-	}
+	var resp []PolicyResponse
 	err := c.do("GET", "/api/v1/iam-policies", nil, &resp)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Policies, nil
+	return resp, nil
 }
 
 // InspectPolicy returns a single policy by name.

@@ -126,12 +126,21 @@ func (s *Server) handleAddTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !isValidUUID(req.UserID) {
+		writeError(w, http.StatusBadRequest, "user_id must be a valid UUID")
+		return
+	}
+
 	if req.Role == "" {
 		req.Role = "member"
 	}
 
 	member, err := s.db.AddTeamMember(r.Context(), teamID, req.UserID, req.Role)
 	if err != nil {
+		if isDBForeignKeyError(err) || isDBInvalidInputError(err) {
+			writeError(w, http.StatusBadRequest, "user not found")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to add team member")
 		return
 	}
@@ -172,8 +181,17 @@ func (s *Server) handleRemoveTeamMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if !isValidUUID(req.UserID) {
+		writeError(w, http.StatusBadRequest, "user_id must be a valid UUID")
+		return
+	}
+
 	if err := s.db.RemoveTeamMember(r.Context(), teamID, req.UserID); err != nil {
 		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, "team member not found")
+			return
+		}
+		if isDBInvalidInputError(err) {
 			writeError(w, http.StatusNotFound, "team member not found")
 			return
 		}
@@ -245,8 +263,17 @@ func (s *Server) handleListTeamMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !isValidUUID(teamID) {
+		writeError(w, http.StatusBadRequest, "team id must be a valid UUID")
+		return
+	}
+
 	members, err := s.db.ListTeamMembers(r.Context(), teamID)
 	if err != nil {
+		if isDBInvalidInputError(err) {
+			writeError(w, http.StatusBadRequest, "invalid team id")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to list team members")
 		return
 	}

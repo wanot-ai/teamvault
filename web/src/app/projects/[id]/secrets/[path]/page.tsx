@@ -111,17 +111,28 @@ export default function SecretDetailPage() {
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffRevealed, setDiffRevealed] = useState(false);
 
+  // Resolve project name from UUID for API calls
+  const [projectName, setProjectName] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
     try {
-      const [secretData, versionsData, allProjects] = await Promise.all([
-        secretsApi.get(projectId, secretPath),
-        secretsApi.versions(projectId, secretPath),
-        projectsApi.list(),
+      const allProjects = await projectsApi.list();
+      const p = (allProjects || []).find((proj) => proj.id === projectId);
+      setProject(p || null);
+      const pName = p?.name;
+      if (!pName) {
+        toast.error("Project not found");
+        setLoading(false);
+        return;
+      }
+      setProjectName(pName);
+
+      const [secretData, versionsData] = await Promise.all([
+        secretsApi.get(pName, secretPath),
+        secretsApi.versions(pName, secretPath),
       ]);
       setSecret(secretData);
       setVersions(versionsData || []);
-      const p = (allProjects || []).find((proj) => proj.id === projectId);
-      setProject(p || null);
     } catch (err) {
       toast.error("Failed to load secret");
       console.error(err);
@@ -131,9 +142,10 @@ export default function SecretDetailPage() {
   }, [projectId, secretPath]);
 
   const loadRotation = useCallback(async () => {
+    if (!projectName) return;
     setRotationLoading(true);
     try {
-      const config = await rotationApi.get(projectId, secretPath);
+      const config = await rotationApi.get(projectName, secretPath);
       setRotationConfig(config);
       setRotationForm({
         schedule: config.schedule,
@@ -146,18 +158,22 @@ export default function SecretDetailPage() {
     } finally {
       setRotationLoading(false);
     }
-  }, [projectId, secretPath]);
+  }, [projectName, secretPath]);
 
   useEffect(() => {
     loadData();
-    loadRotation();
-  }, [loadData, loadRotation]);
+  }, [loadData]);
+
+  useEffect(() => {
+    if (projectName) loadRotation();
+  }, [projectName, loadRotation]);
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!projectName) { toast.error("Project not loaded"); return; }
     setUpdating(true);
     try {
-      await secretsApi.put(projectId, secretPath, { value: newValue });
+      await secretsApi.put(projectName, secretPath, { value: newValue });
       toast.success("Secret updated — new version created");
       setUpdateOpen(false);
       setNewValue("");
@@ -180,9 +196,10 @@ export default function SecretDetailPage() {
 
   const handleSetRotation = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!projectName) { toast.error("Project not loaded"); return; }
     setSettingRotation(true);
     try {
-      await rotationApi.set(projectId, secretPath, rotationForm);
+      await rotationApi.set(projectName, secretPath, rotationForm);
       toast.success("Rotation configuration saved");
       setRotationDialogOpen(false);
       loadRotation();
@@ -195,9 +212,10 @@ export default function SecretDetailPage() {
   };
 
   const handleRotateNow = async () => {
+    if (!projectName) { toast.error("Project not loaded"); return; }
     setRotating(true);
     try {
-      const result = await rotationApi.rotateNow(projectId, secretPath);
+      const result = await rotationApi.rotateNow(projectName, secretPath);
       toast.success(`Secret rotated — now at version ${result.version}`);
       loadData();
       loadRotation();
@@ -214,14 +232,15 @@ export default function SecretDetailPage() {
       toast.error("Select two versions to compare");
       return;
     }
+    if (!projectName) { toast.error("Project not loaded"); return; }
     setDiffLoading(true);
     setDiffRevealed(false);
     try {
       // Fetch both versions by getting the secret with version param
       // We'll fetch the secret value for each version
       const [valA, valB] = await Promise.all([
-        secretsApi.get(projectId, `${secretPath}?version=${diffVersionA}`),
-        secretsApi.get(projectId, `${secretPath}?version=${diffVersionB}`),
+        secretsApi.get(projectName, `${secretPath}?version=${diffVersionA}`),
+        secretsApi.get(projectName, `${secretPath}?version=${diffVersionB}`),
       ]);
       setDiffValueA(valA.value);
       setDiffValueB(valB.value);

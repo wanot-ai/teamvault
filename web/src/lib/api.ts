@@ -1,6 +1,6 @@
 // TeamVault API Client — typed fetch wrapper for all endpoints
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://142.231.83.48:8443/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -387,7 +387,7 @@ export const secrets = {
 
   versions: (projectId: string, path: string) =>
     apiFetch<SecretVersion[]>(
-      `/secrets/${projectId}/${encodeURIComponent(path)}/versions`
+      `/secret-versions/${projectId}/${encodeURIComponent(path)}`
     ),
 };
 
@@ -417,6 +417,8 @@ export const policies = {
 
 // ─── Organizations ───────────────────────────────────────────────────────────
 
+// Server routes: GET /api/v1/orgs, GET /api/v1/orgs/{id}, POST /api/v1/orgs
+// Note: Update (PATCH) and Delete are not implemented server-side yet.
 export const orgs = {
   list: () => apiFetch<Organization[]>("/orgs"),
 
@@ -428,12 +430,14 @@ export const orgs = {
       body: JSON.stringify(data),
     }),
 
+  // Not yet implemented server-side — will return 404/405
   update: (orgId: string, data: UpdateOrganizationRequest) =>
     apiFetch<Organization>(`/orgs/${orgId}`, {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
 
+  // Not yet implemented server-side — will return 404/405
   delete: (orgId: string) =>
     apiFetch<void>(`/orgs/${orgId}`, {
       method: "DELETE",
@@ -442,11 +446,18 @@ export const orgs = {
 
 // ─── Teams ───────────────────────────────────────────────────────────────────
 
+// Server routes: GET /api/v1/orgs/{id}/teams, POST /api/v1/orgs/{id}/teams, GET /api/v1/teams (all)
+// Note: Individual team GET/UPDATE/DELETE not implemented server-side.
 export const teams = {
   list: (orgId: string) => apiFetch<Team[]>(`/orgs/${orgId}/teams`),
 
-  get: (orgId: string, teamId: string) =>
-    apiFetch<Team>(`/orgs/${orgId}/teams/${teamId}`),
+  // Workaround: fetch all teams for the org and filter by ID
+  get: async (orgId: string, teamId: string) => {
+    const allTeams = await apiFetch<Team[]>(`/orgs/${orgId}/teams`);
+    const team = (allTeams || []).find((t) => t.id === teamId);
+    if (!team) throw new ApiError(404, "Team not found");
+    return team;
+  },
 
   create: (orgId: string, data: CreateTeamRequest) =>
     apiFetch<Team>(`/orgs/${orgId}/teams`, {
@@ -454,12 +465,14 @@ export const teams = {
       body: JSON.stringify(data),
     }),
 
+  // Not yet implemented server-side
   update: (orgId: string, teamId: string, data: UpdateTeamRequest) =>
     apiFetch<Team>(`/orgs/${orgId}/teams/${teamId}`, {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
 
+  // Not yet implemented server-side
   delete: (orgId: string, teamId: string) =>
     apiFetch<void>(`/orgs/${orgId}/teams/${teamId}`, {
       method: "DELETE",
@@ -468,53 +481,59 @@ export const teams = {
 
 // ─── Team Members ────────────────────────────────────────────────────────────
 
+// Server routes: POST/DELETE/GET /api/v1/teams/{id}/members
 export const teamMembers = {
-  list: (orgId: string, teamId: string) =>
-    apiFetch<TeamMember[]>(`/orgs/${orgId}/teams/${teamId}/members`),
+  list: (_orgId: string, teamId: string) =>
+    apiFetch<TeamMember[]>(`/teams/${teamId}/members`),
 
-  add: (orgId: string, teamId: string, data: AddTeamMemberRequest) =>
-    apiFetch<TeamMember>(`/orgs/${orgId}/teams/${teamId}/members`, {
+  add: (_orgId: string, teamId: string, data: AddTeamMemberRequest) =>
+    apiFetch<TeamMember>(`/teams/${teamId}/members`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
-  remove: (orgId: string, teamId: string, userId: string) =>
-    apiFetch<void>(`/orgs/${orgId}/teams/${teamId}/members/${userId}`, {
+  // Server uses DELETE /teams/{id}/members with body { user_id }
+  remove: (_orgId: string, teamId: string, userId: string) =>
+    apiFetch<void>(`/teams/${teamId}/members`, {
       method: "DELETE",
+      body: JSON.stringify({ user_id: userId }),
     }),
 
-  updateRole: (orgId: string, teamId: string, userId: string, role: string) =>
+  // Note: no PATCH endpoint on server for role updates; remove + re-add as workaround
+  updateRole: (_orgId: string, teamId: string, userId: string, role: string) =>
     apiFetch<TeamMember>(
-      `/orgs/${orgId}/teams/${teamId}/members/${userId}`,
+      `/teams/${teamId}/members`,
       {
-        method: "PATCH",
-        body: JSON.stringify({ role }),
+        method: "POST",
+        body: JSON.stringify({ user_id: userId, role }),
       }
     ),
 };
 
 // ─── Agents ──────────────────────────────────────────────────────────────────
 
+// Server routes: POST/GET /api/v1/teams/{id}/agents, GET/DELETE /api/v1/agents/{agentId}
 export const agents = {
-  list: (orgId: string, teamId: string) =>
-    apiFetch<Agent[]>(`/orgs/${orgId}/teams/${teamId}/agents`),
+  list: (_orgId: string, teamId: string) =>
+    apiFetch<Agent[]>(`/teams/${teamId}/agents`),
 
-  get: (orgId: string, teamId: string, agentId: string) =>
-    apiFetch<Agent>(`/orgs/${orgId}/teams/${teamId}/agents/${agentId}`),
+  get: (_orgId: string, _teamId: string, agentId: string) =>
+    apiFetch<Agent>(`/agents/${agentId}`),
 
-  create: (orgId: string, teamId: string, data: CreateAgentRequest) =>
-    apiFetch<Agent>(`/orgs/${orgId}/teams/${teamId}/agents`, {
+  create: (_orgId: string, teamId: string, data: CreateAgentRequest) =>
+    apiFetch<Agent>(`/teams/${teamId}/agents`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
-  revoke: (orgId: string, teamId: string, agentId: string) =>
-    apiFetch<Agent>(`/orgs/${orgId}/teams/${teamId}/agents/${agentId}/revoke`, {
-      method: "POST",
+  // No dedicated revoke endpoint on server; delete the agent instead
+  revoke: (_orgId: string, _teamId: string, agentId: string) =>
+    apiFetch<Agent>(`/agents/${agentId}`, {
+      method: "DELETE",
     }),
 
-  delete: (orgId: string, teamId: string, agentId: string) =>
-    apiFetch<void>(`/orgs/${orgId}/teams/${teamId}/agents/${agentId}`, {
+  delete: (_orgId: string, _teamId: string, agentId: string) =>
+    apiFetch<void>(`/agents/${agentId}`, {
       method: "DELETE",
     }),
 };
@@ -538,7 +557,7 @@ export const iamPolicies = {
 
   update: (policyId: string, data: UpdateIAMPolicyRequest) =>
     apiFetch<IAMPolicy>(`/iam-policies/${policyId}`, {
-      method: "PATCH",
+      method: "PUT",
       body: JSON.stringify(data),
     }),
 
@@ -549,7 +568,7 @@ export const iamPolicies = {
 
   toggle: (policyId: string, enabled: boolean) =>
     apiFetch<IAMPolicy>(`/iam-policies/${policyId}`, {
-      method: "PATCH",
+      method: "PUT",
       body: JSON.stringify({ enabled }),
     }),
 };
@@ -638,15 +657,18 @@ export interface HealthStatus {
 
 // ─── Rotation API ────────────────────────────────────────────────────────────
 
+// Server route: GET /api/v1/rotation-status/{project}/{path...}
+// Note: Server only supports reading rotation status. Set/delete/rotateNow
+// are not yet implemented server-side — these stubs will return errors gracefully.
 export const rotation = {
   get: (projectId: string, path: string) =>
     apiFetch<RotationConfig>(
-      `/secrets/${projectId}/${encodeURIComponent(path)}/rotation`
+      `/rotation-status/${projectId}/${encodeURIComponent(path)}`
     ),
 
   set: (projectId: string, path: string, data: SetRotationRequest) =>
     apiFetch<RotationConfig>(
-      `/secrets/${projectId}/${encodeURIComponent(path)}/rotation`,
+      `/rotation-status/${projectId}/${encodeURIComponent(path)}`,
       {
         method: "PUT",
         body: JSON.stringify(data),
@@ -655,54 +677,68 @@ export const rotation = {
 
   delete: (projectId: string, path: string) =>
     apiFetch<void>(
-      `/secrets/${projectId}/${encodeURIComponent(path)}/rotation`,
+      `/rotation-status/${projectId}/${encodeURIComponent(path)}`,
       {
         method: "DELETE",
       }
     ),
 
+  // Rotate-now triggers a new secret version via the secrets POST handler
   rotateNow: (projectId: string, path: string) =>
     apiFetch<{ version: number; rotated_at: string }>(
-      `/secrets/${projectId}/${encodeURIComponent(path)}/rotate`,
+      `/secrets/${projectId}/${encodeURIComponent(path)}`,
       {
         method: "POST",
+        body: JSON.stringify({ action: "rotate" }),
       }
     ),
 };
 
 // ─── Leases API ──────────────────────────────────────────────────────────────
 
+// Server routes: GET /api/v1/leases, POST /api/v1/lease/database, POST /api/v1/lease/{id}/revoke
 export const leases = {
   list: () => apiFetch<Lease[]>("/leases"),
 
   issue: (data: IssueLeaseRequest) =>
-    apiFetch<Lease>("/leases", {
+    apiFetch<Lease>(`/lease/${data.type}`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
   revoke: (leaseId: string) =>
-    apiFetch<Lease>(`/leases/${leaseId}/revoke`, {
+    apiFetch<Lease>(`/lease/${leaseId}/revoke`, {
       method: "POST",
     }),
 };
 
 // ─── Health / Ready ──────────────────────────────────────────────────────────
 
+// Note: /health and /ready are mounted at the server root, not under /api/v1
 export const health = {
-  check: () => apiFetch<HealthStatus>("/health"),
-  ready: () => apiFetch<HealthStatus>("/ready"),
+  check: () =>
+    fetch("/health")
+      .then((res) => {
+        if (!res.ok) throw new ApiError(res.status, res.statusText);
+        return res.json() as Promise<HealthStatus>;
+      }),
+  ready: () =>
+    fetch("/ready")
+      .then((res) => {
+        if (!res.ok) throw new ApiError(res.status, res.statusText);
+        return res.json() as Promise<HealthStatus>;
+      }),
 };
 
 // ─── OIDC / SSO ──────────────────────────────────────────────────────────────
 
 export const oidc = {
   authorizeUrl: () => `${API_BASE}/auth/oidc/authorize`,
-  callback: (token: string) =>
-    apiFetch<{ token: string; user: User }>(`/auth/oidc/callback`, {
-      method: "POST",
-      body: JSON.stringify({ token }),
-    }),
+  // Server OIDC callback is GET with query params (standard OAuth2 redirect)
+  callback: (code: string) =>
+    apiFetch<{ token: string; user: User }>(
+      `/auth/oidc/callback?code=${encodeURIComponent(code)}`
+    ),
 };
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────

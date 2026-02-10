@@ -7,6 +7,7 @@ import (
 
 	"github.com/teamvault/teamvault/internal/audit"
 	"github.com/teamvault/teamvault/internal/crypto"
+	"github.com/teamvault/teamvault/internal/db"
 	"github.com/teamvault/teamvault/internal/policy"
 )
 
@@ -175,21 +176,32 @@ func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get next version number
-	nextVersion, err := s.db.GetNextSecretVersion(ctx, secret.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to determine version")
-		return
-	}
+	// Get next version number and create the version.
+	// Retry on conflict (concurrent writes can race on version number).
+	var sv *db.SecretVersion
+	for attempts := 0; attempts < 3; attempts++ {
+		nextVersion, err := s.db.GetNextSecretVersion(ctx, secret.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to determine version")
+			return
+		}
 
-	// Store encrypted version
-	sv, err := s.db.CreateSecretVersion(ctx, secret.ID, nextVersion,
-		encrypted.Ciphertext, encrypted.Nonce,
-		encrypted.EncryptedDEK, encrypted.DEKNonce,
-		encrypted.MasterKeyVersion, actorID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to store secret version")
-		return
+		sv, err = s.db.CreateSecretVersion(ctx, secret.ID, nextVersion,
+			encrypted.Ciphertext, encrypted.Nonce,
+			encrypted.EncryptedDEK, encrypted.DEKNonce,
+			encrypted.MasterKeyVersion, actorID)
+		if err != nil {
+			if isDBConflictError(err) && attempts < 2 {
+				continue // retry with next version number
+			}
+			if isDBConflictError(err) {
+				writeError(w, http.StatusConflict, "concurrent write conflict, please retry")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to store secret version")
+			return
+		}
+		break
 	}
 
 	// Audit the write (NEVER log the secret value)
@@ -344,11 +356,34 @@ func (s *Server) handleGetSecret(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectName := r.PathValue("project")
+	actorType := getActorType(ctx)
+	actorID := getActorID(ctx)
 
 	project, err := s.db.GetProjectByName(ctx, projectName)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "project not found")
 		return
+	}
+
+	// Policy check: require "list" or "read" permission on the project
+	policyResult, err := s.policy.Evaluate(ctx, policy.Request{
+		SubjectType: actorType,
+		SubjectID:   actorID,
+		Action:      "read",
+		Resource:    projectName + "/*",
+		IsAdmin:     isAdmin(ctx),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "policy evaluation failed")
+		return
+	}
+	if !policyResult.Allowed {
+		// Fall back: allow if user created the project
+		claims := getUserClaims(ctx)
+		if claims == nil || (project.CreatedBy != claims.UserID && claims.Role != "admin") {
+			writeError(w, http.StatusForbidden, "access denied")
+			return
+		}
 	}
 
 	secrets, err := s.db.ListSecrets(ctx, project.ID)

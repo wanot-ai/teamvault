@@ -146,8 +146,17 @@ func (s *Server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !isValidUUID(agentID) {
+		writeError(w, http.StatusBadRequest, "agent id must be a valid UUID")
+		return
+	}
+
 	if err := s.db.DeleteAgent(r.Context(), agentID); err != nil {
 		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+		if isDBInvalidInputError(err) {
 			writeError(w, http.StatusNotFound, "agent not found")
 			return
 		}

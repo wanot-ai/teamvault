@@ -65,19 +65,21 @@ export default function ProjectSecretsPage() {
   const [newValue, setNewValue] = useState("");
   const [newDescription, setNewDescription] = useState("");
 
-  const loadProject = async () => {
+  const loadProject = async (): Promise<Project | null> => {
     try {
       const allProjects = await projectsApi.list();
       const p = (allProjects || []).find((p) => p.id === projectId);
       setProject(p || null);
+      return p || null;
     } catch (err) {
       console.error(err);
+      return null;
     }
   };
 
-  const loadSecrets = async () => {
+  const loadSecrets = async (projectName: string) => {
     try {
-      const data = await secretsApi.list(projectId);
+      const data = await secretsApi.list(projectName);
       setSecretList(data || []);
     } catch (err) {
       toast.error("Failed to load secrets");
@@ -88,26 +90,36 @@ export default function ProjectSecretsPage() {
   };
 
   useEffect(() => {
-    loadProject();
-    loadSecrets();
+    (async () => {
+      const p = await loadProject();
+      if (p?.name) {
+        await loadSecrets(p.name);
+      } else {
+        setLoading(false);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!project?.name) {
+      toast.error("Project not loaded yet");
+      return;
+    }
     setCreating(true);
     try {
       const body: PutSecretRequest = { value: newValue };
       if (newDescription) {
         body.description = newDescription;
       }
-      await secretsApi.put(projectId, newPath, body);
+      await secretsApi.put(project.name, newPath, body);
       toast.success(`Secret "${newPath}" created`);
       setDialogOpen(false);
       setNewPath("");
       setNewValue("");
       setNewDescription("");
-      loadSecrets();
+      loadSecrets(project.name);
     } catch (err) {
       toast.error("Failed to create secret");
       console.error(err);
@@ -117,11 +129,12 @@ export default function ProjectSecretsPage() {
   };
 
   const handleDelete = async (path: string) => {
+    if (!project?.name) return;
     setDeleting(path);
     try {
-      await secretsApi.delete(projectId, path);
+      await secretsApi.delete(project.name, path);
       toast.success(`Secret "${path}" deleted`);
-      loadSecrets();
+      loadSecrets(project.name);
     } catch (err) {
       toast.error("Failed to delete secret");
       console.error(err);

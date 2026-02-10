@@ -229,8 +229,17 @@ func (s *Server) handleDeleteIAMPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !isValidUUID(policyID) {
+		writeError(w, http.StatusBadRequest, "policy id must be a valid UUID")
+		return
+	}
+
 	if err := s.db.DeleteIAMPolicy(r.Context(), policyID); err != nil {
 		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, "IAM policy not found")
+			return
+		}
+		if isDBInvalidInputError(err) {
 			writeError(w, http.StatusNotFound, "IAM policy not found")
 			return
 		}

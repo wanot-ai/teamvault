@@ -173,14 +173,12 @@ func (c *APIClient) PutSecret(project, path, value string) error {
 
 // ListSecrets lists secrets in a project.
 func (c *APIClient) ListSecrets(project string) ([]SecretListItem, error) {
-	var resp struct {
-		Secrets []SecretListItem `json:"secrets"`
-	}
+	var resp []SecretListItem
 	err := c.do("GET", fmt.Sprintf("/api/v1/secrets/%s", project), nil, &resp)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Secrets, nil
+	return resp, nil
 }
 
 // ServiceAccountToken is the response from creating a service account.

@@ -44,14 +44,12 @@ func (c *APIClient) CreateOrg(name, displayName, description string) (*OrgRespon
 
 // ListOrgs returns all organizations the user has access to.
 func (c *APIClient) ListOrgs() ([]OrgResponse, error) {
-	var resp struct {
-		Orgs []OrgResponse `json:"orgs"`
-	}
+	var resp []OrgResponse
 	err := c.do("GET", "/api/v1/orgs", nil, &resp)
 	if err != nil {
 		return nil, err
 	}
-	return resp.Orgs, nil
+	return resp, nil
 }
 
 // --- Cobra commands ---

@@ -54,7 +54,10 @@ func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListOrgs(w http.ResponseWriter, r *http.Request) {
-	orgs, err := s.db.ListOrgs(r.Context())
+	ctx := r.Context()
+	claims := getUserClaims(ctx)
+
+	orgs, err := s.db.ListOrgs(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list organizations")
 		return
@@ -62,6 +65,17 @@ func (s *Server) handleListOrgs(w http.ResponseWriter, r *http.Request) {
 
 	if orgs == nil {
 		orgs = []db.Org{}
+	}
+
+	// Non-admin users can only see orgs they created
+	if claims != nil && claims.Role != "admin" {
+		filtered := make([]db.Org, 0)
+		for _, o := range orgs {
+			if o.CreatedBy == claims.UserID {
+				filtered = append(filtered, o)
+			}
+		}
+		orgs = filtered
 	}
 
 	writeJSON(w, http.StatusOK, orgs)

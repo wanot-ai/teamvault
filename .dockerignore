@@ -1,0 +1,16 @@
+.git
+.gitignore
+*.md
+README.md
+TECH_SPEC.md
+ISSUES.md
+tests/
+demo/
+extension/
+kubernetes/
+terraform/
+bin/
+web/
+.dockerignore
+docker-compose.yml
+Makefile

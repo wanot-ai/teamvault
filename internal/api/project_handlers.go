@@ -54,7 +54,10 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	projects, err := s.db.ListProjects(r.Context())
+	ctx := r.Context()
+	claims := getUserClaims(ctx)
+
+	projects, err := s.db.ListProjects(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list projects")
 		return
@@ -62,6 +65,17 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 
 	if projects == nil {
 		projects = []db.Project{}
+	}
+
+	// Non-admin users can only see projects they created
+	if claims != nil && claims.Role != "admin" {
+		filtered := make([]db.Project, 0)
+		for _, p := range projects {
+			if p.CreatedBy == claims.UserID {
+				filtered = append(filtered, p)
+			}
+		}
+		projects = filtered
 	}
 
 	writeJSON(w, http.StatusOK, projects)
