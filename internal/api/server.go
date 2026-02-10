@@ -10,28 +10,38 @@ import (
 	"github.com/teamvault/teamvault/internal/db"
 	"github.com/teamvault/teamvault/internal/lease"
 	"github.com/teamvault/teamvault/internal/policy"
+	"github.com/teamvault/teamvault/internal/replication"
 	"github.com/teamvault/teamvault/internal/rotation"
+	"github.com/teamvault/teamvault/internal/webhooks"
 )
 
 // Server holds all dependencies for the HTTP API.
 type Server struct {
-	db                 *db.DB
-	auth               *auth.Auth
-	crypto             *crypto.EnvelopeCrypto
-	policy             *policy.Engine
-	audit              *audit.Logger
-	oidcClient         *auth.OIDCClient
-	rotationScheduler  *rotation.Scheduler
-	leaseManager       *lease.Manager
-	mux                *http.ServeMux
-	rl                 *rateLimiter
+	db                  *db.DB
+	auth                *auth.Auth
+	crypto              *crypto.EnvelopeCrypto
+	policy              *policy.Engine
+	audit               *audit.Logger
+	oidcClient          *auth.OIDCClient
+	rotationScheduler   *rotation.Scheduler
+	leaseManager        *lease.Manager
+	teeHandlers         *TEEHandlers
+	zkHandlers          *ZKHandlers
+	webhookManager      *webhooks.WebhookManager
+	replicationManager  *replication.ReplicationManager
+	mux                 *http.ServeMux
+	rl                  *rateLimiter
 }
 
 // ServerConfig holds optional dependencies for the server.
 type ServerConfig struct {
-	OIDCClient        *auth.OIDCClient
-	RotationScheduler *rotation.Scheduler
-	LeaseManager      *lease.Manager
+	OIDCClient         *auth.OIDCClient
+	RotationScheduler  *rotation.Scheduler
+	LeaseManager       *lease.Manager
+	TEEHandlers        *TEEHandlers
+	ZKHandlers         *ZKHandlers
+	WebhookManager     *webhooks.WebhookManager
+	ReplicationManager *replication.ReplicationManager
 }
 
 // NewServer creates a new API server with all routes configured.
@@ -42,16 +52,20 @@ func NewServer(database *db.DB, authSvc *auth.Auth, cryptoSvc *crypto.EnvelopeCr
 // NewServerWithConfig creates a new API server with optional production dependencies.
 func NewServerWithConfig(database *db.DB, authSvc *auth.Auth, cryptoSvc *crypto.EnvelopeCrypto, policySvc *policy.Engine, auditSvc *audit.Logger, config ServerConfig) *Server {
 	s := &Server{
-		db:                database,
-		auth:              authSvc,
-		crypto:            cryptoSvc,
-		policy:            policySvc,
-		audit:             auditSvc,
-		oidcClient:        config.OIDCClient,
-		rotationScheduler: config.RotationScheduler,
-		leaseManager:      config.LeaseManager,
-		mux:               http.NewServeMux(),
-		rl:                newRateLimiter(100, 200), // 100 req/s per IP, burst 200
+		db:                  database,
+		auth:                authSvc,
+		crypto:              cryptoSvc,
+		policy:              policySvc,
+		audit:               auditSvc,
+		oidcClient:          config.OIDCClient,
+		rotationScheduler:   config.RotationScheduler,
+		leaseManager:        config.LeaseManager,
+		teeHandlers:         config.TEEHandlers,
+		zkHandlers:          config.ZKHandlers,
+		webhookManager:      config.WebhookManager,
+		replicationManager:  config.ReplicationManager,
+		mux:                 http.NewServeMux(),
+		rl:                  newRateLimiter(100, 200), // 100 req/s per IP, burst 200
 	}
 
 	s.setupRoutes()
@@ -65,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 	handler = s.loggingMiddleware(handler)
 	handler = rateLimitMiddleware(s.rl)(handler)
 	handler = requestIDMiddleware(handler)
+	handler = corsMiddleware(handler)
 	return handler
 }
 
@@ -148,6 +163,35 @@ func (s *Server) setupRoutes() {
 	s.mux.Handle("POST /api/v1/lease/database", s.authMiddleware(http.HandlerFunc(s.handleIssueDatabaseLease)))
 	s.mux.Handle("POST /api/v1/lease/{id}/revoke", s.authMiddleware(http.HandlerFunc(s.handleRevokeLease)))
 	s.mux.Handle("GET /api/v1/leases", s.authMiddleware(http.HandlerFunc(s.handleListLeases)))
+
+	// Dashboard
+	s.mux.Handle("GET /api/v1/dashboard/stats", s.authMiddleware(http.HandlerFunc(s.handleDashboardStats)))
+
+	// Teams (all teams, not scoped to an org)
+	s.mux.Handle("GET /api/v1/teams", s.authMiddleware(http.HandlerFunc(s.handleListAllTeams)))
+
+	// Rotation status (GET via separate route to avoid {path...}/rotation conflict)
+	s.mux.Handle("GET /api/v1/rotation-status/{project}/{path...}", s.authMiddleware(http.HandlerFunc(s.handleGetRotationStatus)))
+
+	// TEE (Trusted Execution Environment)
+	s.mux.Handle("GET /api/v1/tee/attestation", s.authMiddleware(http.HandlerFunc(s.handleTEEAttestation)))
+	s.mux.Handle("POST /api/v1/tee/session", s.authMiddleware(http.HandlerFunc(s.handleTEESession)))
+	s.mux.Handle("POST /api/v1/tee/read", s.authMiddleware(http.HandlerFunc(s.handleTEERead)))
+
+	// ZK (Zero-Knowledge) Auth
+	s.mux.Handle("POST /api/v1/auth/zk/credential", s.authMiddleware(http.HandlerFunc(s.handleZKCredential)))
+	s.mux.HandleFunc("POST /api/v1/auth/zk/verify", s.handleZKVerify) // No auth required for verification
+
+	// Webhooks
+	s.mux.Handle("POST /api/v1/webhooks", s.authMiddleware(http.HandlerFunc(s.handleRegisterWebhook)))
+	s.mux.Handle("GET /api/v1/webhooks", s.authMiddleware(http.HandlerFunc(s.handleListWebhooks)))
+	s.mux.Handle("DELETE /api/v1/webhooks/{id}", s.authMiddleware(http.HandlerFunc(s.handleDeleteWebhook)))
+	s.mux.Handle("POST /api/v1/webhooks/{id}/test", s.authMiddleware(http.HandlerFunc(s.handleTestWebhook)))
+
+	// Replication
+	s.mux.Handle("POST /api/v1/replication/push", s.authMiddleware(http.HandlerFunc(s.handleReplicationPush)))
+	s.mux.Handle("POST /api/v1/replication/pull", s.authMiddleware(http.HandlerFunc(s.handleReplicationPull)))
+	s.mux.Handle("GET /api/v1/replication/status", s.authMiddleware(http.HandlerFunc(s.handleReplicationStatus)))
 }
 
 // handleSecretPost dispatches POST requests to secrets paths based on suffix.

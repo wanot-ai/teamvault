@@ -1,0 +1,102 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: teamvault-system
+  labels:
+    app.kubernetes.io/part-of: teamvault
+    # Ensure the webhook never injects into its own namespace
+    teamvault.dev/inject: "disabled"
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: teamvault-sidecar-injector
+  namespace: teamvault-system
+  labels:
+    app: teamvault-sidecar-injector
+    app.kubernetes.io/name: teamvault-sidecar-injector
+    app.kubernetes.io/component: webhook
+    app.kubernetes.io/part-of: teamvault
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: teamvault-sidecar-injector
+  labels:
+    app: teamvault-sidecar-injector
+    app.kubernetes.io/name: teamvault-sidecar-injector
+    app.kubernetes.io/component: webhook
+    app.kubernetes.io/part-of: teamvault
+rules:
+  # Read pods and namespaces for webhook logic
+  - apiGroups: [""]
+    resources: ["pods", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  # Read secrets for token retrieval
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  # Read MutatingWebhookConfigurations for self-registration
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["mutatingwebhookconfigurations"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  # Events for auditing
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: teamvault-sidecar-injector
+  labels:
+    app: teamvault-sidecar-injector
+    app.kubernetes.io/name: teamvault-sidecar-injector
+    app.kubernetes.io/component: webhook
+    app.kubernetes.io/part-of: teamvault
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: teamvault-sidecar-injector
+subjects:
+  - kind: ServiceAccount
+    name: teamvault-sidecar-injector
+    namespace: teamvault-system
+
+---
+# Role for reading secrets in the teamvault-system namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: teamvault-sidecar-injector
+  namespace: teamvault-system
+  labels:
+    app: teamvault-sidecar-injector
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: teamvault-sidecar-injector
+  namespace: teamvault-system
+  labels:
+    app: teamvault-sidecar-injector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: teamvault-sidecar-injector
+subjects:
+  - kind: ServiceAccount
+    name: teamvault-sidecar-injector
+    namespace: teamvault-system

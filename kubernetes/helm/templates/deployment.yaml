@@ -1,0 +1,162 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "teamvault.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "teamvault.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "teamvault.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "teamvault.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "teamvault.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: server
+          image: {{ include "teamvault.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /usr/local/bin/teamvault-server
+          args:
+            - --listen={{ .Values.server.listenAddr }}
+            - --log-level={{ .Values.server.logLevel }}
+            {{- if .Values.tls.enabled }}
+            - --tls-cert=/etc/teamvault/tls/tls.crt
+            - --tls-key=/etc/teamvault/tls/tls.key
+            {{- end }}
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          env:
+            - name: TEAMVAULT_DATABASE_URL
+              {{- if .Values.database.existingSecret }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.urlKey }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "teamvault.fullname" . }}-db
+                  key: database-url
+              {{- end }}
+            - name: TEAMVAULT_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "teamvault.secretName" . }}
+                  key: {{ .Values.secrets.masterKeyKey }}
+            - name: TEAMVAULT_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "teamvault.secretName" . }}
+                  key: {{ .Values.secrets.jwtSecretKey }}
+            {{- if .Values.config.oidcIssuer }}
+            - name: TEAMVAULT_OIDC_ISSUER
+              value: {{ .Values.config.oidcIssuer | quote }}
+            - name: TEAMVAULT_OIDC_CLIENT_ID
+              value: {{ .Values.config.oidcClientID | quote }}
+            {{- if .Values.config.oidcClientSecret }}
+            - name: TEAMVAULT_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "teamvault.fullname" . }}-oidc
+                  key: client-secret
+            {{- end }}
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "teamvault.fullname" . }}
+          volumeMounts:
+            {{- if .Values.tls.enabled }}
+            - name: tls-certs
+              mountPath: /etc/teamvault/tls
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: https
+              {{- if .Values.tls.enabled }}
+              scheme: HTTPS
+              {{- else }}
+              scheme: HTTP
+              {{- end }}
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: https
+              {{- if .Values.tls.enabled }}
+              scheme: HTTPS
+              {{- else }}
+              scheme: HTTP
+              {{- end }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: https
+              {{- if .Values.tls.enabled }}
+              scheme: HTTPS
+              {{- else }}
+              scheme: HTTP
+              {{- end }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+      volumes:
+        {{- if .Values.tls.enabled }}
+        - name: tls-certs
+          secret:
+            secretName: {{ include "teamvault.tlsSecretName" . }}
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 10Mi
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

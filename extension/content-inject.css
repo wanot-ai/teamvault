@@ -1,0 +1,55 @@
+/* TeamVault Extension — Content Script Styles */
+/* Injected into TeamVault web UI pages */
+
+#teamvault-ext-badge {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(16, 185, 129, 0.95);
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(8px);
+  cursor: default;
+  user-select: none;
+  transition: opacity 0.3s ease;
+  opacity: 0.9;
+}
+
+#teamvault-ext-badge:hover {
+  opacity: 1;
+}
+
+.teamvault-ext-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.92);
+  border-radius: 6px;
+  cursor: pointer;
+  z-index: 10;
+  transition: background 0.2s ease;
+}
+
+.teamvault-ext-overlay:hover {
+  background: rgba(15, 23, 42, 0.98);
+}
+
+.teamvault-ext-overlay-content {
+  display: flex;
+  align-items: center;
+  color: #10b981;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+}

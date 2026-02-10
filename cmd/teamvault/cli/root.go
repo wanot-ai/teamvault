@@ -41,4 +41,7 @@ func init() {
 	// Export/import
 	rootCmd.AddCommand(exportCmd)
 	rootCmd.AddCommand(importCmd)
+
+	// Secret scanning
+	rootCmd.AddCommand(scanCmd)
 }

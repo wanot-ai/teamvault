@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=380">
+  <title>TeamVault</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-brand">
+        <svg class="header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          <circle cx="12" cy="16" r="1"/>
+        </svg>
+        <span class="header-title">TeamVault</span>
+      </div>
+      <div class="header-actions">
+        <span id="attestation-badge" class="badge badge-unknown" title="TEE attestation status">
+          <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+            <path d="M8 1a2.5 2.5 0 0 0-2.5 2.5V5H4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1.5V3.5A2.5 2.5 0 0 0 8 1zm0 1a1.5 1.5 0 0 1 1.5 1.5V5h-3V3.5A1.5 1.5 0 0 1 8 2z"/>
+          </svg>
+        </span>
+        <button id="btn-settings" class="btn-icon" title="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Login View -->
+    <div id="view-login" class="view" style="display: none;">
+      <div class="login-form">
+        <h2>Connect to TeamVault</h2>
+        <div class="form-group">
+          <label for="login-server">Server URL</label>
+          <input type="url" id="login-server" placeholder="https://vault.example.com" autocomplete="url">
+        </div>
+        <div class="form-group">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div id="login-error" class="error-msg" style="display: none;"></div>
+        <button id="btn-login" class="btn btn-primary">Login</button>
+        <p class="login-hint">Or paste an API token in <a href="#" id="link-token-login">settings</a></p>
+      </div>
+    </div>
+
+    <!-- Main View (logged in) -->
+    <div id="view-main" class="view" style="display: none;">
+      <!-- Search -->
+      <div class="search-bar">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="M21 21l-4.35-4.35"/>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search secrets by path..." autocomplete="off">
+        <kbd class="search-hint">/</kbd>
+      </div>
+
+      <!-- Results -->
+      <div id="results-container" class="results-container">
+        <div id="results-empty" class="results-empty">
+          <p>Type to search secrets</p>
+        </div>
+        <div id="results-loading" class="results-loading" style="display: none;">
+          <div class="spinner"></div>
+          <span>Searching...</span>
+        </div>
+        <ul id="results-list" class="results-list"></ul>
+      </div>
+
+      <!-- Revealed Secret -->
+      <div id="secret-detail" class="secret-detail" style="display: none;">
+        <div class="secret-detail-header">
+          <button id="btn-back" class="btn-icon" title="Back">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+          <span id="detail-path" class="detail-path"></span>
+        </div>
+        <div class="secret-value-container">
+          <pre id="detail-value" class="secret-value masked">••••••••••••</pre>
+          <div class="secret-actions">
+            <button id="btn-reveal" class="btn btn-sm" title="Reveal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+              Reveal
+            </button>
+            <button id="btn-copy" class="btn btn-sm btn-primary" title="Copy to clipboard">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              Copy
+            </button>
+          </div>
+        </div>
+        <div class="secret-meta">
+          <span id="detail-version" class="meta-tag"></span>
+          <span id="detail-created" class="meta-tag"></span>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="footer">
+        <span id="footer-user" class="footer-user"></span>
+        <button id="btn-logout" class="btn-link" title="Logout">Logout</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

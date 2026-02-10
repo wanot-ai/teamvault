@@ -1,0 +1,24 @@
+---
+# CSIDriver registration for TeamVault Secrets Store provider.
+#
+# This tells Kubernetes that the TeamVault driver exists and what
+# capabilities it has.
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: secrets-store.csi.teamvault.dev
+  labels:
+    app: teamvault-csi-provider
+    app.kubernetes.io/name: teamvault-csi-provider
+    app.kubernetes.io/component: csi-driver
+    app.kubernetes.io/part-of: teamvault
+spec:
+  # The driver does not require attaching volumes to nodes
+  attachRequired: false
+  # Secrets are ephemeral inline volumes
+  volumeLifecycleModes:
+    - Ephemeral
+  # The driver does not need pod info (the Secrets Store CSI driver passes it)
+  podInfoOnMount: false
+  # FSGroupPolicy: the driver handles file ownership internally
+  fsGroupPolicy: File

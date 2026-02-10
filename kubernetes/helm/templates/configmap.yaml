@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "teamvault.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "teamvault.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+data:
+  TEAMVAULT_SERVER_URL: {{ .Values.config.serverURL | quote }}
+  TEAMVAULT_LOG_LEVEL: {{ .Values.server.logLevel | quote }}
+  TEAMVAULT_LISTEN_ADDR: {{ .Values.server.listenAddr | quote }}
+  TEAMVAULT_TLS_ENABLED: {{ .Values.tls.enabled | quote }}
+  {{- if .Values.config.oidcIssuer }}
+  TEAMVAULT_OIDC_ISSUER: {{ .Values.config.oidcIssuer | quote }}
+  TEAMVAULT_OIDC_CLIENT_ID: {{ .Values.config.oidcClientID | quote }}
+  {{- end }}

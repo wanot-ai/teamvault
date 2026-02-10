@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: teamvault-sidecar-injector
+  namespace: teamvault-system
+  labels:
+    app: teamvault-sidecar-injector
+    app.kubernetes.io/name: teamvault-sidecar-injector
+    app.kubernetes.io/component: webhook
+    app.kubernetes.io/part-of: teamvault
+spec:
+  type: ClusterIP
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8443
+      protocol: TCP
+  selector:
+    app: teamvault-sidecar-injector

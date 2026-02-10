@@ -1,0 +1,220 @@
+# Default values for TeamVault Helm chart.
+
+# -- Number of server replicas
+replicaCount: 1
+
+image:
+  # -- TeamVault server image repository
+  repository: teamvault/teamvault
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Image tag (defaults to appVersion)
+  tag: ""
+
+# -- Image pull secrets for private registries
+imagePullSecrets: []
+
+# -- Override the chart name
+nameOverride: ""
+# -- Override the full release name
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Create a service account
+  create: true
+  # -- Annotations for the service account
+  annotations: {}
+  # -- Service account name (auto-generated if empty)
+  name: ""
+
+# -- Pod annotations
+podAnnotations: {}
+
+# -- Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  fsGroup: 65534
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+server:
+  # -- TeamVault server listen address
+  listenAddr: ":8443"
+  # -- Log level (debug, info, warn, error)
+  logLevel: "info"
+  # -- Enable TLS (requires tls.enabled=true)
+  tls: true
+
+# TeamVault configuration
+config:
+  # -- TeamVault server address (used for self-referencing URLs)
+  serverURL: "https://teamvault.example.com"
+  # -- Database connection string
+  # @default -- Uses the postgresql subchart if enabled
+  databaseURL: ""
+  # -- OIDC issuer URL (optional)
+  oidcIssuer: ""
+  # -- OIDC client ID (optional)
+  oidcClientID: ""
+  # -- OIDC client secret (optional, stored in secret)
+  oidcClientSecret: ""
+
+# Secrets (stored in Kubernetes Secret)
+secrets:
+  # -- Master encryption key (base64-encoded, 32 bytes)
+  # IMPORTANT: Generate with: openssl rand -base64 32
+  masterKey: ""
+  # -- JWT signing secret for auth tokens
+  # Generate with: openssl rand -base64 32
+  jwtSecret: ""
+  # -- Existing secret name (overrides masterKey and jwtSecret above)
+  existingSecret: ""
+  # -- Key in existing secret for master key
+  masterKeyKey: "master-key"
+  # -- Key in existing secret for JWT secret
+  jwtSecretKey: "jwt-secret"
+
+# Database configuration
+database:
+  # -- Database host
+  host: ""
+  # -- Database port
+  port: 5432
+  # -- Database name
+  name: "teamvault"
+  # -- Database user
+  user: "teamvault"
+  # -- Database password (stored in secret)
+  password: ""
+  # -- SSL mode (disable, require, verify-ca, verify-full)
+  sslMode: "require"
+  # -- Existing secret for database credentials
+  existingSecret: ""
+  # -- Key in existing secret for database URL
+  urlKey: "database-url"
+
+# PostgreSQL subchart (optional)
+postgresql:
+  # -- Enable bundled PostgreSQL
+  enabled: false
+  auth:
+    username: teamvault
+    password: ""
+    database: teamvault
+
+service:
+  # -- Service type
+  type: ClusterIP
+  # -- Service port
+  port: 8443
+  # -- Node port (only when type=NodePort)
+  nodePort: ""
+  # -- Annotations for the service
+  annotations: {}
+
+ingress:
+  # -- Enable ingress
+  enabled: false
+  # -- Ingress class name
+  className: ""
+  # -- Ingress annotations
+  annotations: {}
+    # kubernetes.io/tls-acme: "true"
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  # -- Ingress hosts
+  hosts:
+    - host: teamvault.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- TLS configuration
+  tls: []
+  #  - secretName: teamvault-tls
+  #    hosts:
+  #      - teamvault.example.com
+
+# -- Resource requests and limits
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# -- Horizontal pod autoscaler
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# -- Node selector
+nodeSelector: {}
+
+# -- Tolerations
+tolerations: []
+
+# -- Affinity rules
+affinity: {}
+
+# Database migration job
+migration:
+  # -- Enable database migration job
+  enabled: true
+  # -- Migration job backoff limit
+  backoffLimit: 3
+  # -- Annotations for the migration job
+  annotations: {}
+  # -- Resource limits for the migration job
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# TLS configuration
+tls:
+  # -- Enable TLS on the server
+  enabled: true
+  # -- Use cert-manager to generate certificates
+  certManager: false
+  # -- Existing TLS secret name
+  existingSecret: ""
+  # -- TLS certificate (PEM)
+  cert: ""
+  # -- TLS private key (PEM)
+  key: ""
+
+# Sidecar injector webhook
+sidecarInjector:
+  # -- Enable sidecar injector webhook
+  enabled: false
+  # -- Sidecar injector image
+  image:
+    repository: teamvault/sidecar-injector
+    tag: ""
+    pullPolicy: IfNotPresent
+  # -- Webhook failure policy (Ignore or Fail)
+  failurePolicy: Ignore
+  # -- Webhook replica count
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

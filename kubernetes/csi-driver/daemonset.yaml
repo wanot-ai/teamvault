@@ -1,0 +1,156 @@
+---
+# DaemonSet for the TeamVault CSI Secrets Store Provider.
+#
+# Runs on every node and communicates with the Secrets Store CSI driver
+# via a gRPC Unix domain socket. When a pod mounts a volume referencing
+# a TeamVault SecretProviderClass, this provider fetches the secrets
+# from TeamVault and writes them as files.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: teamvault-csi-provider
+  namespace: teamvault-system
+  labels:
+    app: teamvault-csi-provider
+    app.kubernetes.io/name: teamvault-csi-provider
+    app.kubernetes.io/component: csi-provider
+    app.kubernetes.io/part-of: teamvault
+spec:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: teamvault-csi-provider
+  template:
+    metadata:
+      labels:
+        app: teamvault-csi-provider
+        app.kubernetes.io/name: teamvault-csi-provider
+    spec:
+      serviceAccountName: teamvault-csi-provider
+      hostNetwork: false
+      priorityClassName: system-node-critical
+      tolerations:
+        # Run on all nodes including control plane
+        - operator: Exists
+      containers:
+        - name: provider
+          image: teamvault/csi-provider:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --provider-volume=/etc/kubernetes/secrets-store-csi-providers
+            - --grpc-address=unix:///provider/teamvault.sock
+            - --log-level=info
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            # Socket directory shared with Secrets Store CSI driver
+            - name: provider-volume
+              mountPath: /etc/kubernetes/secrets-store-csi-providers
+            # Provider registration socket
+            - name: provider-socket
+              mountPath: /provider
+            # Host-level mount targets for CSI
+            - name: mountpoint-dir
+              mountPath: /var/lib/kubelet/pods
+              mountPropagation: HostToContainer
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            exec:
+              command:
+                - /usr/local/bin/teamvault-csi-provider
+                - --health-check
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - /usr/local/bin/teamvault-csi-provider
+                - --health-check
+            initialDelaySeconds: 3
+            periodSeconds: 10
+      volumes:
+        # Secrets Store CSI driver provider registration directory
+        - name: provider-volume
+          hostPath:
+            path: /etc/kubernetes/secrets-store-csi-providers
+            type: DirectoryOrCreate
+        # Provider's own socket directory
+        - name: provider-socket
+          emptyDir:
+            medium: Memory
+        # Kubelet pods directory for mount propagation
+        - name: mountpoint-dir
+          hostPath:
+            path: /var/lib/kubelet/pods
+            type: Directory
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: teamvault-csi-provider
+  namespace: teamvault-system
+  labels:
+    app: teamvault-csi-provider
+    app.kubernetes.io/name: teamvault-csi-provider
+    app.kubernetes.io/part-of: teamvault
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: teamvault-csi-provider
+  labels:
+    app: teamvault-csi-provider
+    app.kubernetes.io/part-of: teamvault
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+  - apiGroups: ["secrets-store.csi.x-k8s.io"]
+    resources: ["secretproviderclasses"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: teamvault-csi-provider
+  labels:
+    app: teamvault-csi-provider
+    app.kubernetes.io/part-of: teamvault
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: teamvault-csi-provider
+subjects:
+  - kind: ServiceAccount
+    name: teamvault-csi-provider
+    namespace: teamvault-system

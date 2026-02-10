@@ -121,6 +121,48 @@ func (s *Server) handleSetRotation(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleGetRotationStatus returns the rotation configuration for a secret, or {"configured": false} if none.
+func (s *Server) handleGetRotationStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	projectName := r.PathValue("project")
+	secretPath := r.PathValue("path")
+
+	if projectName == "" || secretPath == "" {
+		writeError(w, http.StatusBadRequest, "project and path are required")
+		return
+	}
+
+	// Resolve the secret
+	project, err := s.db.GetProjectByName(ctx, projectName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	secret, err := s.db.GetSecret(ctx, project.ID, secretPath)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "secret not found")
+		return
+	}
+
+	schedule, err := s.db.GetRotationSchedule(ctx, secret.ID)
+	if err != nil {
+		// No rotation configured
+		writeJSON(w, http.StatusOK, map[string]bool{"configured": false})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, rotationResponse{
+		ID:             schedule.ID,
+		SecretID:       schedule.SecretID,
+		CronExpression: schedule.CronExpression,
+		ConnectorType:  schedule.ConnectorType,
+		LastRotatedAt:  schedule.LastRotatedAt,
+		NextRotationAt: schedule.NextRotationAt,
+		Status:         schedule.Status,
+	})
+}
+
 func (s *Server) handleManualRotate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projectName := r.PathValue("project")

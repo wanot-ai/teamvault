@@ -1,0 +1,49 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: teamvault-sidecar-injector
+  labels:
+    app: teamvault-sidecar-injector
+    app.kubernetes.io/name: teamvault-sidecar-injector
+    app.kubernetes.io/component: webhook
+    app.kubernetes.io/part-of: teamvault
+  annotations:
+    # cert-manager can auto-inject the CA bundle
+    cert-manager.io/inject-ca-from: teamvault-system/teamvault-sidecar-injector-certs
+webhooks:
+  - name: sidecar-injector.teamvault.dev
+    admissionReviewVersions: ["v1", "v1beta1"]
+    sideEffects: None
+    timeoutSeconds: 10
+    failurePolicy: Ignore  # Don't block pod creation if webhook is unavailable
+    reinvocationPolicy: IfNeeded
+    matchPolicy: Equivalent
+    clientConfig:
+      service:
+        name: teamvault-sidecar-injector
+        namespace: teamvault-system
+        path: /mutate
+        port: 443
+      # CA bundle will be injected by cert-manager or manually set.
+      # Uncomment and set if not using cert-manager:
+      # caBundle: <BASE64_CA_CERT>
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+        scope: "Namespaced"
+    namespaceSelector:
+      matchExpressions:
+        # Only inject into namespaces that opt-in
+        - key: teamvault.dev/inject
+          operator: In
+          values: ["enabled"]
+        # Never inject into system namespaces
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: ["kube-system", "kube-public", "kube-node-lease", "teamvault-system"]
+    objectSelector:
+      matchExpressions:
+        - key: teamvault.dev/injected
+          operator: DoesNotExist

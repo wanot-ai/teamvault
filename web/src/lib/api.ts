@@ -1,6 +1,6 @@
 // TeamVault API Client — typed fetch wrapper for all endpoints
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://142.231.83.48:8443/api/v1";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -524,31 +524,31 @@ export const agents = {
 export const iamPolicies = {
   list: (type?: IAMPolicyType) => {
     const params = type ? `?type=${type}` : "";
-    return apiFetch<IAMPolicy[]>(`/iam/policies${params}`);
+    return apiFetch<IAMPolicy[]>(`/iam-policies${params}`);
   },
 
   get: (policyId: string) =>
-    apiFetch<IAMPolicy>(`/iam/policies/${policyId}`),
+    apiFetch<IAMPolicy>(`/iam-policies/${policyId}`),
 
   create: (data: CreateIAMPolicyRequest) =>
-    apiFetch<IAMPolicy>("/iam/policies", {
+    apiFetch<IAMPolicy>("/iam-policies", {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
   update: (policyId: string, data: UpdateIAMPolicyRequest) =>
-    apiFetch<IAMPolicy>(`/iam/policies/${policyId}`, {
+    apiFetch<IAMPolicy>(`/iam-policies/${policyId}`, {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
 
   delete: (policyId: string) =>
-    apiFetch<void>(`/iam/policies/${policyId}`, {
+    apiFetch<void>(`/iam-policies/${policyId}`, {
       method: "DELETE",
     }),
 
   toggle: (policyId: string, enabled: boolean) =>
-    apiFetch<IAMPolicy>(`/iam/policies/${policyId}`, {
+    apiFetch<IAMPolicy>(`/iam-policies/${policyId}`, {
       method: "PATCH",
       body: JSON.stringify({ enabled }),
     }),

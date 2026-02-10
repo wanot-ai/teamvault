@@ -193,6 +193,51 @@ func (s *Server) handleRemoveTeamMember(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 
+// handleListAllTeams lists all teams (admin) or the current user's teams.
+func (s *Server) handleListAllTeams(w http.ResponseWriter, r *http.Request) {
+	claims := getUserClaims(r.Context())
+
+	if claims != nil && claims.Role == "admin" {
+		// Admin: return all teams
+		teams, err := s.db.ListAllTeams(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list teams")
+			return
+		}
+		if teams == nil {
+			teams = []db.Team{}
+		}
+		writeJSON(w, http.StatusOK, teams)
+		return
+	}
+
+	// Non-admin: return teams the user belongs to
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "user authentication required")
+		return
+	}
+
+	memberships, err := s.db.GetUserTeams(r.Context(), claims.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list user teams")
+		return
+	}
+
+	// Resolve team details for each membership
+	var teams []db.Team
+	for _, m := range memberships {
+		team, err := s.db.GetTeamByID(r.Context(), m.TeamID)
+		if err != nil {
+			continue // skip teams that can't be resolved
+		}
+		teams = append(teams, *team)
+	}
+	if teams == nil {
+		teams = []db.Team{}
+	}
+	writeJSON(w, http.StatusOK, teams)
+}
+
 func (s *Server) handleListTeamMembers(w http.ResponseWriter, r *http.Request) {
 	teamID := r.PathValue("id")
 	if teamID == "" {

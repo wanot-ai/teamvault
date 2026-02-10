@@ -1,30 +1,37 @@
 # TeamVault Terraform Provider
 
-Manage TeamVault secrets, policies, and projects as Infrastructure-as-Code.
+Manage TeamVault secrets, projects, and IAM policies as Infrastructure-as-Code.
 
-## Status
+## Features
 
-**Stub** — This provider skeleton defines the resource and data source schemas. Full CRUD implementation requires adding `terraform-plugin-sdk/v2` as a dependency.
+- **Full CRUD** for secrets (create, read, update, delete)
+- **Project management** to organize secrets into namespaces
+- **IAM policy management** with HCL-based policy definitions
+- **Data source** to read existing secrets for use in other resources
+- **Import support** for adopting existing resources into Terraform state
+- **Sensitive value handling** — secret values are marked sensitive in Terraform state
 
-## Setup
+## Requirements
 
-### Build
+- Terraform >= 1.0
+- Go >= 1.23 (for building from source)
+- A running TeamVault server
+
+## Installation
+
+### From Source
 
 ```bash
 cd terraform/
-go mod init github.com/teamvault/terraform-provider-teamvault
-go get github.com/hashicorp/terraform-plugin-sdk/v2
 go build -o terraform-provider-teamvault
+
+# Install for local development
+ARCH=$(go env GOOS)_$(go env GOARCH)
+mkdir -p ~/.terraform.d/plugins/local/teamvault/teamvault/0.1.0/${ARCH}/
+cp terraform-provider-teamvault ~/.terraform.d/plugins/local/teamvault/teamvault/0.1.0/${ARCH}/
 ```
 
-### Install (local development)
-
-```bash
-mkdir -p ~/.terraform.d/plugins/local/teamvault/teamvault/0.1.0/$(go env GOOS)_$(go env GOARCH)/
-cp terraform-provider-teamvault ~/.terraform.d/plugins/local/teamvault/teamvault/0.1.0/$(go env GOOS)_$(go env GOARCH)/
-```
-
-## Configuration
+### Provider Configuration
 
 ```hcl
 terraform {
@@ -42,25 +49,18 @@ provider "teamvault" {
 }
 ```
 
+## Configuration
+
+| Attribute | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `address` | string | Yes | TeamVault server URL. Also: `TEAMVAULT_ADDR` env var. |
+| `token` | string | Yes | Auth token (JWT or service account). Also: `TEAMVAULT_TOKEN` env var. |
+
 ## Resources
 
-### teamvault_secret
+### `teamvault_project`
 
-Manage a secret in TeamVault.
-
-```hcl
-resource "teamvault_secret" "stripe_key" {
-  project     = "my-project"
-  path        = "services/payment/prod/STRIPE_KEY"
-  value       = var.stripe_key
-  type        = "kv"
-  description = "Stripe API key for production"
-}
-```
-
-### teamvault_project
-
-Manage a project (vault).
+Manages a project (vault namespace) in TeamVault.
 
 ```hcl
 resource "teamvault_project" "payments" {
@@ -69,18 +69,83 @@ resource "teamvault_project" "payments" {
 }
 ```
 
-### teamvault_policy
+#### Arguments
 
-Manage an IAM policy.
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `name` | string | Yes | Unique project name |
+| `description` | string | No | Project description |
+
+#### Attributes
+
+| Name | Description |
+|------|-------------|
+| `id` | Project ID |
+| `created_by` | Creator user/SA ID |
+| `created_at` | Creation timestamp |
+
+#### Import
+
+```bash
+terraform import teamvault_project.payments payments
+```
+
+---
+
+### `teamvault_secret`
+
+Manages an encrypted, versioned secret in TeamVault.
+
+```hcl
+resource "teamvault_secret" "db_password" {
+  project     = "payments"
+  path        = "database/prod/password"
+  value       = var.db_password
+  type        = "kv"
+  description = "Production database password"
+}
+```
+
+#### Arguments
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `project` | string | Yes | Project name (ForceNew) |
+| `path` | string | Yes | Secret path (ForceNew) |
+| `value` | string | Yes | Secret value (sensitive) |
+| `type` | string | No | Secret type: `kv`, `json`, `file` (default: `kv`) |
+| `description` | string | No | Secret description |
+
+#### Attributes
+
+| Name | Description |
+|------|-------------|
+| `id` | Resource ID (`project/path`) |
+| `version` | Current version number |
+| `secret_id` | Internal secret UUID |
+
+#### Import
+
+```bash
+# Import format: project/path
+terraform import teamvault_secret.db_password payments/database/prod/password
+```
+
+---
+
+### `teamvault_policy`
+
+Manages an IAM policy with HCL-based policy definitions.
 
 ```hcl
 resource "teamvault_policy" "read_only" {
   org_id      = var.org_id
-  name        = "read-only-payment"
+  name        = "read-only-payments"
   description = "Read-only access to payment secrets"
   policy_type = "rbac"
-  hcl_source  = <<-HCL
-    policy "read-only-payment" {
+
+  hcl_source = <<-HCL
+    policy "read-only-payments" {
       type = "rbac"
       rule {
         effect       = "allow"
@@ -92,24 +157,71 @@ resource "teamvault_policy" "read_only" {
 }
 ```
 
+#### Arguments
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `org_id` | string | Yes | Organization ID (ForceNew) |
+| `name` | string | Yes | Policy name |
+| `description` | string | No | Policy description |
+| `policy_type` | string | Yes | Type: `rbac`, `abac`, `pbac` |
+| `hcl_source` | string | No | Policy definition in HCL format |
+
+#### Attributes
+
+| Name | Description |
+|------|-------------|
+| `id` | Policy ID |
+| `policy_doc` | Compiled JSON policy document |
+| `created_by` | Creator user ID |
+| `created_at` | Creation timestamp |
+| `updated_at` | Last update timestamp |
+
+#### Import
+
+```bash
+# Import by policy ID
+terraform import teamvault_policy.read_only <policy-uuid>
+```
+
+---
+
 ## Data Sources
 
-### teamvault_secret (read)
+### `teamvault_secret` (data)
 
-Read a secret value (for use in other resources).
+Reads an existing secret value. Useful for referencing secrets managed outside Terraform.
 
 ```hcl
 data "teamvault_secret" "db_password" {
-  project = "my-project"
-  path    = "services/database/prod/password"
+  project = "payments"
+  path    = "database/prod/password"
 }
 
-# Use in another resource
+# Use the value in another resource
 resource "aws_db_instance" "main" {
   password = data.teamvault_secret.db_password.value
-  # ...
 }
 ```
+
+#### Arguments
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `project` | string | Yes | Project name |
+| `path` | string | Yes | Secret path |
+
+#### Attributes
+
+| Name | Description |
+|------|-------------|
+| `value` | Decrypted secret value (sensitive) |
+| `version` | Current version number |
+| `type` | Secret type |
+| `description` | Secret description |
+| `secret_id` | Internal secret UUID |
+
+---
 
 ## Environment Variables
 
@@ -118,12 +230,84 @@ resource "aws_db_instance" "main" {
 | `TEAMVAULT_ADDR` | TeamVault server address |
 | `TEAMVAULT_TOKEN` | Authentication token |
 
-## Roadmap
+## Examples
 
-- [ ] Full CRUD for `teamvault_secret`
-- [ ] Full CRUD for `teamvault_policy`
-- [ ] Full CRUD for `teamvault_project`
-- [ ] Data source: `teamvault_secret`
-- [ ] Import support for existing resources
-- [ ] Acceptance tests
-- [ ] Registry publication
+See the [`examples/`](./examples/) directory for a complete working example including:
+
+- Provider configuration
+- Project creation
+- Secret management (KV, JSON, file types)
+- IAM policy definitions
+- Data source usage
+- Output values
+
+### Quick Start
+
+```bash
+cd examples/
+
+# Set your TeamVault credentials
+export TEAMVAULT_ADDR="https://vault.example.com:8443"
+export TEAMVAULT_TOKEN="your-token-here"
+
+# Create a variables file
+cat > terraform.tfvars <<EOF
+org_id         = "your-org-id"
+db_password    = "super-secret-password"
+stripe_api_key = "sk_live_..."
+EOF
+
+# Initialize and apply
+terraform init
+terraform plan
+terraform apply
+```
+
+## API Endpoints Used
+
+| Operation | Method | Endpoint |
+|-----------|--------|----------|
+| Create/Update Secret | `PUT` | `/api/v1/secrets/{project}/{path}` |
+| Read Secret | `GET` | `/api/v1/secrets/{project}/{path}` |
+| Delete Secret | `DELETE` | `/api/v1/secrets/{project}/{path}` |
+| Create Project | `POST` | `/api/v1/projects` |
+| List Projects | `GET` | `/api/v1/projects` |
+| Create IAM Policy | `POST` | `/api/v1/iam-policies` |
+| Read IAM Policy | `GET` | `/api/v1/iam-policies/{id}` |
+| Update IAM Policy | `PUT` | `/api/v1/iam-policies/{id}` |
+| Delete IAM Policy | `DELETE` | `/api/v1/iam-policies/{id}` |
+
+## Development
+
+### Building
+
+```bash
+go build -o terraform-provider-teamvault
+```
+
+### Testing
+
+```bash
+# Unit tests
+go test ./...
+
+# Acceptance tests (requires a running TeamVault server)
+TEAMVAULT_ADDR=https://localhost:8443 \
+TEAMVAULT_TOKEN=test-token \
+TF_ACC=1 go test ./... -v
+```
+
+### Debug Mode
+
+```bash
+# Run the provider in debug mode for step-through debugging
+go build -gcflags="all=-N -l" -o terraform-provider-teamvault
+TF_LOG=DEBUG terraform plan
+```
+
+## Security Notes
+
+- Secret values are stored in Terraform state. **Always encrypt your state file** (use remote backends with encryption).
+- The provider communicates with TeamVault over HTTPS. Ensure your server has valid TLS certificates.
+- Use service account tokens with minimal scopes for CI/CD environments.
+- Consider using the `teamvault_secret` data source instead of hardcoding secrets in Terraform configurations.

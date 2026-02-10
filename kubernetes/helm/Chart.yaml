@@ -1,0 +1,24 @@
+apiVersion: v2
+name: teamvault
+description: TeamVault - Team secret management with policy-based access control
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/teamvault/teamvault
+sources:
+  - https://github.com/teamvault/teamvault
+maintainers:
+  - name: TeamVault
+    url: https://github.com/teamvault
+keywords:
+  - secrets
+  - vault
+  - secret-management
+  - security
+  - iam
+  - policy
+  - rbac
+icon: https://raw.githubusercontent.com/teamvault/teamvault/main/web/public/logo.png
+annotations:
+  artifacthub.io/category: security
+  artifacthub.io/license: MIT

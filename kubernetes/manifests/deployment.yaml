@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: teamvault-sidecar-injector
+  namespace: teamvault-system
+  labels:
+    app: teamvault-sidecar-injector
+    app.kubernetes.io/name: teamvault-sidecar-injector
+    app.kubernetes.io/component: webhook
+    app.kubernetes.io/part-of: teamvault
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: teamvault-sidecar-injector
+  template:
+    metadata:
+      labels:
+        app: teamvault-sidecar-injector
+        app.kubernetes.io/name: teamvault-sidecar-injector
+    spec:
+      serviceAccountName: teamvault-sidecar-injector
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: injector
+          image: teamvault/sidecar-injector:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --port=8443
+            - --cert=/etc/webhook/certs/tls.crt
+            - --key=/etc/webhook/certs/tls.key
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          env:
+            - name: TEAMVAULT_IMAGE
+              value: "teamvault/teamvault:latest"
+            - name: TEAMVAULT_ADDR
+              value: "https://teamvault.teamvault-system.svc:8443"
+            - name: SECRET_MOUNT_PATH
+              value: "/teamvault/secrets"
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /etc/webhook/certs
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 3
+            periodSeconds: 5
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: teamvault-sidecar-injector-certs
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - teamvault-sidecar-injector
+                topologyKey: kubernetes.io/hostname
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
