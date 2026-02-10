@@ -681,16 +681,22 @@ cd web && npm run dev   # Web UI on localhost:3000
 - [x] Web: rotation UI, leases page, SSO button, version diff, dashboard stats
 - [x] E2E demo script (9-step automated demo)
 
+- [x] TEE Confidential Data Plane (software enclave, attestation verifier, secure channel)
+- [x] ZK selective disclosure auth (BBS+ signatures, credential issuance, proof verification)
+- [x] Browser extension for E2E secret viewing (Chrome/Firefox Manifest V3)
+- [x] Kubernetes sidecar injector (mutating webhook) + CSI driver + Helm chart
+- [x] Full Terraform provider (CRUD resources, data sources, examples)
+- [x] Secret scanning (`teamvault scan`, 17 patterns, pre-commit hooks)
+- [x] Webhooks (HMAC-SHA256 signed, retry logic, event types)
+- [x] Multi-region replication (WAL-based, vector clocks, leader/follower)
+
 ### Next
 
-- [ ] TEE Confidential Data Plane (server-side encryption in enclave)
-- [ ] ZK selective disclosure auth (BBS+ credentials)
-- [ ] Browser extension for E2E secret viewing
-- [ ] Kubernetes sidecar injector / CSI driver
-- [ ] Full Terraform provider (with acceptance tests)
-- [ ] Secret scanning (pre-commit hooks)
-- [ ] Webhooks for secret change notifications
-- [ ] Multi-region replication
+- [ ] Production TEE backends (Intel SGX, AWS Nitro Enclaves)
+- [ ] SCIM provisioning
+- [ ] LDAP/Active Directory integration
+- [ ] Secret expiration alerts
+- [ ] Mobile app (iOS/Android)
 
 ---
 
