@@ -29,8 +29,9 @@ type secretResponse struct {
 	SecretType  string          `json:"secret_type"`
 	Metadata    json.RawMessage `json:"metadata,omitempty"`
 	Version     int             `json:"version"`
-	Value       string          `json:"value,omitempty"` // Only present on read
+	Value       string          `json:"value,omitempty"`
 	CreatedBy   string          `json:"created_by"`
+	CreatedAt   string          `json:"created_at"`
 }
 
 // fileMetadata is stored in the secret's metadata column for file-type secrets.
@@ -225,6 +226,7 @@ func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 		Metadata:    metadata,
 		Version:     sv.Version,
 		CreatedBy:   actorID,
+		CreatedAt:   secret.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	})
 }
 
@@ -350,6 +352,7 @@ func (s *Server) handleGetSecret(w http.ResponseWriter, r *http.Request) {
 		Version:     sv.Version,
 		Value:       string(plaintext),
 		CreatedBy:   sv.CreatedBy,
+		CreatedAt:   secret.CreatedAt.Format("2006-01-02T15:04:05Z"),
 	})
 }
 
